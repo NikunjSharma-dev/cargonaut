@@ -45,7 +45,7 @@ function RadialScoreGauge({ score = 94.2, label = "On-Time SLA Score", subtitle 
           <h4 className="text-xs font-bold text-heading uppercase tracking-wider">Fleet Operational Score</h4>
           <p className="text-[11px] text-muted">Real-time aggregate metric</p>
         </div>
-        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+        <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
           HEALTHY
         </span>
       </div>
@@ -102,32 +102,32 @@ function TransportModeSplitWidget({ roadOrders = 4, airOrders = 3, airCapable = 
           <h4 className="text-xs font-bold text-heading uppercase tracking-wider">Multi-Modal Freight Split</h4>
           <p className="text-[11px] text-muted">Road Trucking vs Air Cargo</p>
         </div>
-        <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+        <span className="text-[10px] font-bold text-purple-300 bg-purple-500/10 px-2.5 py-0.5 rounded-full border border-purple-500/30">
           {airCapable} Freighters Ready
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl">
-          <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-xs mb-1">
+        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+          <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs mb-1">
             <Truck size={16} /> Road Freight
           </div>
-          <p className="text-xl font-extrabold text-heading">{roadOrders} <span className="text-xs text-muted font-normal">orders</span></p>
-          <p className="text-[10px] text-emerald-700 font-semibold">{roadPct}% Share</p>
+          <p className="text-xl font-extrabold text-heading">{roadOrders} <span className="text-xs text-subtle font-normal">orders</span></p>
+          <p className="text-[10px] text-emerald-400 font-semibold">{roadPct}% Share</p>
         </div>
 
-        <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-xl">
-          <div className="flex items-center gap-1.5 text-purple-700 font-bold text-xs mb-1">
+        <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl">
+          <div className="flex items-center gap-1.5 text-purple-300 font-bold text-xs mb-1">
             <Plane size={16} /> Air Cargo
           </div>
-          <p className="text-xl font-extrabold text-heading">{airOrders} <span className="text-xs text-muted font-normal">orders</span></p>
-          <p className="text-[10px] text-purple-700 font-semibold">{airPct}% Share</p>
+          <p className="text-xl font-extrabold text-heading">{airOrders} <span className="text-xs text-subtle font-normal">orders</span></p>
+          <p className="text-[10px] text-purple-300 font-semibold">{airPct}% Share</p>
         </div>
       </div>
 
       <div className="w-full h-3 rounded-full bg-app-hover overflow-hidden flex shadow-inner">
         <div style={{ width: `${roadPct}%` }} className="h-full bg-emerald-500 transition-all duration-500" />
-        <div style={{ width: `${airPct}%` }} className="h-full bg-purple-600 transition-all duration-500" />
+        <div style={{ width: `${airPct}%` }} className="h-full bg-purple-500 transition-all duration-500" />
       </div>
     </div>
   )

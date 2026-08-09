@@ -98,7 +98,7 @@ export default function Sidebar({ mobileOpen, onClose, onOpenCreateOrder, collap
 
       <aside
         className={clsx(
-          'fixed inset-y-0 left-0 bg-app-surface border-r border-app-border flex flex-col z-50 transition-all duration-200 ease-in-out',
+          'fixed inset-y-0 left-0 bg-app-surface border-r border-app-border flex flex-col z-50 transition-all duration-200 ease-in-out overflow-x-hidden',
           collapsed ? 'w-[var(--nav-collapsed-width)]' : 'w-[var(--nav-width)]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}

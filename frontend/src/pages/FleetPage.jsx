@@ -327,14 +327,19 @@ export default function FleetPage() {
                     <span className="text-muted font-medium">Payload Capacity:</span>
                     <span className="font-mono font-bold text-heading">{(v.payload_capacity_kg || 0).toLocaleString()} kg</span>
                   </div>
-                  {isAir && (
-                    <div className="flex justify-between items-center text-purple-700 font-semibold bg-purple-50 px-2 py-1 rounded-lg border border-purple-200">
+                  {isAir ? (
+                    <div className="flex justify-between items-center text-purple-300 font-semibold bg-purple-500/10 px-2.5 py-1 rounded-lg border border-purple-500/30">
                       <span>ULD Capacity: {v.uld_positions || 6} Slots</span>
                       <span>Range: {(v.range_km || 1500).toLocaleString()} km</span>
                     </div>
+                  ) : (
+                    <div className="flex justify-between items-center text-emerald-300 font-semibold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                      <span>Max Volume: {v.volume_capacity_m3 || 85} m³</span>
+                      <span>Range: {(v.range_km || 1200).toLocaleString()} km</span>
+                    </div>
                   )}
                   {v.has_refrigeration && (
-                    <div className="flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200 w-max">
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/30 w-max">
                       <Snowflake size={12} /> Temperature Controlled / Cold Chain
                     </div>
                   )}

@@ -133,11 +133,11 @@ export default function AnalyticsPage() {
           </div>
           <div className="w-full h-64 pt-2">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mixData} margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} />
-                <Tooltip content={<ChartTooltip />} />
+              <BarChart data={mixData} margin={{ top: 10, right: 10, bottom: 25, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.6} />
+                <XAxis dataKey="label" interval={0} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }} />
                 <Bar dataKey="total_weight_kg" name="Weight (kg)" fill="#e8606d" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -160,7 +160,7 @@ export default function AnalyticsPage() {
                   </div>
                   <span className="text-primary font-bold">{v.utilization_pct}% Load</span>
                 </div>
-                <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div className="h-full bg-primary rounded-full" style={{ width: `${v.utilization_pct}%` }} />
                 </div>
                 <div className="text-[11px] text-muted flex justify-between">
@@ -175,15 +175,15 @@ export default function AnalyticsPage() {
 
       {/* AI Fleet Anomaly Detection Panel */}
       <div className="card space-y-4 border-app-border">
-        <div className="flex items-center justify-between pb-3 border-b border-app-border">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-app-border">
+          <div className="min-w-0 flex-1">
             <h3 className="text-sm font-bold text-heading flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-400" />
-              AI Telemetry Anomaly Panel (Isolation Forest)
+              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <span>AI Telemetry Anomaly Panel (Isolation Forest Model)</span>
             </h3>
-            <p className="text-xs text-muted">Periodic multi-variate statistical anomaly scoring on speed, idle time, fuel rate & braking</p>
+            <p className="text-xs text-muted mt-0.5">Periodic multi-variate statistical anomaly scoring on speed, idle time, fuel rate & braking</p>
           </div>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap self-start sm:self-auto">
             {anomalies?.filter(a => a.is_anomaly).length || 0} Flagged Anomalies
           </span>
         </div>

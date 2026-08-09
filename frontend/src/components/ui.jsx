@@ -130,33 +130,33 @@ export function StatCard({
 export function StatusBadge({ status }) {
   const normalized = status?.toLowerCase() || 'draft'
   const map = {
-    on_route: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    delivered: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    waiting: 'bg-amber-50 text-amber-700 border-amber-200',
-    in_transit: 'bg-amber-50 text-amber-700 border-amber-200',
-    dispatched: 'bg-blue-50 text-blue-700 border-primary/25',
-    confirmed: 'bg-blue-50 text-blue-700 border-primary/25',
-    failed: 'bg-red-50 text-red-700 border-red-200',
+    on_route: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+    delivered: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+    waiting: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+    in_transit: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+    dispatched: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+    confirmed: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+    failed: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
     cancelled: 'bg-app-hover text-body border-app-border',
     draft: 'bg-app-hover text-body border-app-border',
     // Shift roster states
-    scheduled: 'bg-blue-50 text-blue-700 border-primary/25',
-    active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    scheduled: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+    active: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
     completed: 'bg-app-hover text-body border-app-border',
   }
 
   const dotMap = {
-    on_route: 'bg-emerald-500',
-    delivered: 'bg-emerald-500',
-    waiting: 'bg-amber-500',
-    in_transit: 'bg-amber-500',
-    dispatched: 'bg-primary',
-    confirmed: 'bg-primary',
-    failed: 'bg-danger',
+    on_route: 'bg-emerald-400',
+    delivered: 'bg-emerald-400',
+    waiting: 'bg-amber-400',
+    in_transit: 'bg-amber-400',
+    dispatched: 'bg-blue-400',
+    confirmed: 'bg-blue-400',
+    failed: 'bg-rose-500',
     cancelled: 'bg-slate-400',
     draft: 'bg-slate-400',
-    scheduled: 'bg-primary',
-    active: 'bg-emerald-500',
+    scheduled: 'bg-blue-400',
+    active: 'bg-emerald-400',
     completed: 'bg-slate-400',
   }
 
@@ -164,9 +164,9 @@ export function StatusBadge({ status }) {
   const dotCls = dotMap[normalized] || 'bg-slate-400'
 
   return (
-    <span className={clsx('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border shadow-2xs', cls)}>
-      <span className={clsx('w-1.5 h-1.5 rounded-full', dotCls)} />
-      {status?.replace('_', ' ')}
+    <span className={clsx('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border shadow-2xs whitespace-nowrap', cls)}>
+      <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', dotCls)} />
+      <span>{status?.replace('_', ' ')}</span>
     </span>
   )
 }
@@ -178,10 +178,11 @@ export function VehicleStatusBadge({ status }) {
 // ─── Loader & Spinner ─────────────────────────────────────────────────────────
 
 export function Spinner({ size = 20, className }) {
+  const numSize = typeof size === 'number' ? size : size === 'sm' ? 16 : size === 'lg' ? 32 : 20
   return (
     <Loader2
-      size={size}
-      className={clsx('animate-spin text-primary', className)}
+      size={numSize}
+      className={clsx('animate-spin text-primary flex-shrink-0', className)}
     />
   )
 }
@@ -239,11 +240,15 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
 export function PriorityBadge({ priority }) {
   const map = {
     1: { label: 'Standard SLA', cls: 'bg-app-hover text-body border-app-border' },
-    2: { label: 'High Priority',   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-    3: { label: 'Express Urgent', cls: 'bg-red-50 text-red-700 border-red-200' },
+    2: { label: 'High Priority', cls: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+    3: { label: 'Express Urgent', cls: 'bg-rose-500/10 text-rose-400 border-rose-500/30' },
   }
   const { label, cls } = map[priority] || map[1]
-  return <span className={clsx('px-2.5 py-0.5 rounded-full text-xs font-semibold border', cls)}>{label}</span>
+  return (
+    <span className={clsx('inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-xs font-semibold border', cls)}>
+      {label}
+    </span>
+  )
 }
 
 // ─── Cargo & Transport Mode Badges ──────────────────────────────────────────
@@ -253,12 +258,12 @@ export function CargoBadge({ type, size = 'sm' }) {
   const Icon = meta.icon
   return (
     <span className={clsx(
-      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-all',
-      meta.tone === 'cargo-cold' && 'bg-blue-50 text-blue-700 border-blue-200',
-      meta.tone === 'cargo-fragile' && 'bg-purple-50 text-purple-700 border-purple-200',
-      meta.tone === 'cargo-hazard' && 'bg-red-50 text-red-700 border-red-200',
-      meta.tone === 'cargo-bulk' && 'bg-amber-50 text-amber-700 border-amber-200',
-      meta.tone === 'cargo-value' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-all whitespace-nowrap',
+      meta.tone === 'cargo-cold' && 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+      meta.tone === 'cargo-fragile' && 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+      meta.tone === 'cargo-hazard' && 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+      meta.tone === 'cargo-bulk' && 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+      meta.tone === 'cargo-value' && 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
       meta.tone === 'cargo-neutral' && 'bg-app-hover text-body border-app-border'
     )}>
       <Icon size={size === 'sm' ? 12 : 14} className="flex-shrink-0" />
@@ -271,10 +276,10 @@ export function TransportModeBadge({ mode }) {
   const isAir = mode === 'air'
   return (
     <span className={clsx(
-      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wider',
+      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wider whitespace-nowrap',
       isAir
-        ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300'
-        : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+        ? 'bg-purple-500/10 text-purple-300 border-purple-500/30'
+        : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
     )}>
       {isAir ? <Plane size={13} className="flex-shrink-0" /> : <Truck size={13} className="flex-shrink-0" />}
       <span>{isAir ? 'Air Freight' : 'Road Transport'}</span>
