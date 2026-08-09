@@ -30,38 +30,43 @@ function isHtmlPayload(data) {
   return typeof data === 'string' && /^\s*<(!doctype|html)/i.test(data)
 }
 
+function offlineError(config, isRead) {
+  apiStatus.offline = true
+  return Object.assign(new Error('API unavailable'), {
+    config,
+    isOffline: true,
+    response: {
+      status: 503,
+      data: {
+        detail: isRead
+          ? 'Cannot reach the API.'
+          : 'Cannot reach the API — the change was not saved.',
+      },
+    },
+  })
+}
+
 api.interceptors.response.use(
   (res) => {
+    // A static host answers API paths with the SPA shell, status 200 and all
     if (isHtmlPayload(res.data)) {
-      apiStatus.offline = true
-      return { ...res, data: {} }
+      return Promise.reject(offlineError(res.config, true))
     }
     apiStatus.offline = false
     return res
   },
   (err) => {
-    // A static host (GitHub Pages) answers API paths with an HTML 404 rather
-    // than failing to connect, so treat that as "no API" too. A JSON 404 from
-    // the real API — "Hub not found" — stays a genuine error.
+    // ...or with an HTML 404. A JSON 404 from the real API — "Hub not found" —
+    // stays a genuine error.
     const htmlNotFound = err.response?.status === 404 && isHtmlPayload(err.response.data)
     const unreachable = !err.response || err.code === 'ERR_NETWORK' || htmlNotFound
     const isRead = (err.config?.method || 'get').toLowerCase() === 'get'
 
+    // Always reject. Resolving with a stand-in payload would report success for
+    // a write that never reached the server, and hand readers an object whose
+    // shape they never expect — `data?.forEach` guards undefined, not {}.
     if (unreachable) {
-      apiStatus.offline = true
-
-      // Reads degrade to an empty payload so screens can render placeholders.
-      // Writes must never do this: resolving here would report a success for a
-      // request that never reached the server.
-      if (isRead) {
-        console.warn('API unreachable — rendering without live data')
-        return Promise.resolve({ data: {} })
-      }
-      return Promise.reject(
-        Object.assign(err, {
-          response: { data: { detail: 'Cannot reach the API — the change was not saved.' } },
-        })
-      )
+      return Promise.reject(offlineError(err.config, isRead))
     }
 
     if (err.response?.status === 401) {
