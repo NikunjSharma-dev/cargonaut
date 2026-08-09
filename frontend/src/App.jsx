@@ -10,6 +10,7 @@ import HubsPage from './pages/HubsPage'
 import TrackingPage from './pages/TrackingPage'
 import GeofencesPage from './pages/GeofencesPage'
 import ShiftsPage from './pages/ShiftsPage'
+import MaintenancePage from './pages/MaintenancePage'
 import DispatchPage from './pages/DispatchPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import DriverViewPage from './pages/DriverViewPage'
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="shifts"      element={<ShiftsPage />} />
           <Route path="driver-view" element={<DriverViewPage />} />
           <Route path="fleet"       element={<FleetPage />} />
+          <Route path="maintenance" element={<MaintenancePage />} />
           <Route path="hubs"        element={<HubsPage />} />
           <Route path="analytics"   element={<AnalyticsPage />} />
           <Route path="settings"    element={<SettingsPage />} />

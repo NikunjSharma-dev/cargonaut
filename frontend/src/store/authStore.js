@@ -59,6 +59,41 @@ export const useAuthStore = create(
         }
       },
 
+      guestLogin: async () => {
+        try {
+          const { data } = await api.post('/auth/guest')
+          set({
+            token: data.access_token,
+            user: {
+              id: data.user_id,
+              email: data.email,
+              full_name: data.full_name,
+              role: data.role,
+            },
+            tenantId: data.tenant_id,
+            isDemo: true,
+          })
+          api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`
+          return data
+        } catch (err) {
+          const demoData = {
+            access_token: DEMO_TOKEN,
+            user_id: 'demo-guest-1',
+            email: 'guest@cargonaut.io',
+            full_name: 'Guest Operator',
+            role: 'viewer',
+            tenant_id: 'tenant-demo-802',
+          }
+          set({
+            token: demoData.access_token,
+            user: { id: demoData.user_id, email: demoData.email, full_name: demoData.full_name, role: demoData.role },
+            tenantId: demoData.tenant_id,
+            isDemo: true,
+          })
+          return demoData
+        }
+      },
+
       register: async (payload) => {
         try {
           const { data } = await api.post('/auth/register', payload)

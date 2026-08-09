@@ -1216,3 +1216,226 @@ async def test_tenant_data_isolation(client):
     # Tenant B tries to access Tenant A's order — should 404
     resp = await client.get(f"/api/v1/orders/{order_id_a}", headers=headers_b)
     assert resp.status_code == 404, "Tenant isolation violated!"
+
+
+# ─── Maintenance Log Tests ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_maintenance_log_crud_and_filters(client, auth_headers):
+    # 1. Create a vehicle first
+    v_resp = await client.post("/api/v1/vehicles/", json={
+        "registration_number": "MH-12-MX-9999",
+        "vehicle_type": "truck",
+        "payload_capacity_kg": 5000.0,
+    }, headers=auth_headers)
+    assert v_resp.status_code == 201
+    vehicle_id = v_resp.json()["id"]
+
+    # 2. Create maintenance log (Fuel)
+    m_resp = await client.post("/api/v1/maintenance/", json={
+        "vehicle_id": vehicle_id,
+        "type": "fuel",
+        "cost": 150.50,
+        "odometer": 45200.0,
+        "date": "2026-08-10T10:00:00Z",
+        "notes": "Full tank diesel",
+    }, headers=auth_headers)
+    assert m_resp.status_code == 201
+    log_data = m_resp.json()
+    log_id = log_data["id"]
+    assert log_data["vehicle_registration"] == "MH-12-MX-9999"
+    assert log_data["cost"] == 150.50
+
+    # 3. Create second log (Oil change)
+    m2_resp = await client.post("/api/v1/maintenance/", json={
+        "vehicle_id": vehicle_id,
+        "type": "oil_change",
+        "cost": 85.00,
+        "odometer": 45250.0,
+        "date": "2026-08-10T12:00:00Z",
+        "notes": "Synthetic oil change",
+    }, headers=auth_headers)
+    assert m2_resp.status_code == 201
+
+    # 4. List logs filtered by vehicle_id
+    list_resp = await client.get(f"/api/v1/maintenance/?vehicle_id={vehicle_id}", headers=auth_headers)
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()) == 2
+
+    # 5. List logs filtered by type=fuel
+    fuel_resp = await client.get(f"/api/v1/maintenance/?type=fuel", headers=auth_headers)
+    assert fuel_resp.status_code == 200
+    assert len(fuel_resp.json()) >= 1
+    assert fuel_resp.json()[0]["type"] == "fuel"
+
+    # 6. GET single log by ID
+    get_resp = await client.get(f"/api/v1/maintenance/{log_id}", headers=auth_headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["id"] == log_id
+
+    # 7. PATCH log
+    patch_resp = await client.patch(f"/api/v1/maintenance/{log_id}", json={
+        "cost": 160.00,
+        "notes": "Full tank diesel + window wash",
+    }, headers=auth_headers)
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["cost"] == 160.00
+    assert "window wash" in patch_resp.json()["notes"]
+
+    # 8. DELETE log
+    del_resp = await client.delete(f"/api/v1/maintenance/{log_id}", headers=auth_headers)
+    assert del_resp.status_code == 204
+
+    # 9. Verify deleted
+    get_after_del = await client.get(f"/api/v1/maintenance/{log_id}", headers=auth_headers)
+    assert get_after_del.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_maintenance_log_auth_and_isolation(client):
+    # Unauthenticated request -> 403 (HTTPBearer behavior)
+    resp = await client.get("/api/v1/maintenance/")
+    assert resp.status_code == 403
+
+    # Tenant A
+    resp_a = await client.post("/api/v1/auth/register", json={
+        "tenant_name": "Maint Tenant A",
+        "tenant_slug": "maint-tenant-a",
+        "admin_email": "admin@maint-a.com",
+        "admin_password": "maintpassword123",
+        "admin_name": "Maint Admin A",
+    })
+    headers_a = {"Authorization": f"Bearer {resp_a.json()['access_token']}"}
+
+    # Vehicle A
+    v_a = await client.post("/api/v1/vehicles/", json={
+        "registration_number": "A-VEH-1",
+        "vehicle_type": "van",
+        "payload_capacity_kg": 1000.0,
+    }, headers=headers_a)
+    v_id_a = v_a.json()["id"]
+
+    log_a = await client.post("/api/v1/maintenance/", json={
+        "vehicle_id": v_id_a,
+        "type": "fuel",
+        "cost": 50.0,
+        "odometer": 1000.0,
+        "date": "2026-08-10T10:00:00Z",
+    }, headers=headers_a)
+    log_id_a = log_a.json()["id"]
+
+    # Tenant B
+    resp_b = await client.post("/api/v1/auth/register", json={
+        "tenant_name": "Maint Tenant B",
+        "tenant_slug": "maint-tenant-b",
+        "admin_email": "admin@maint-b.com",
+        "admin_password": "maintpassword123",
+        "admin_name": "Maint Admin B",
+    })
+    headers_b = {"Authorization": f"Bearer {resp_b.json()['access_token']}"}
+
+    # Tenant B accesses Tenant A's maintenance log -> 404
+    assert (await client.get(f"/api/v1/maintenance/{log_id_a}", headers=headers_b)).status_code == 404
+    assert (await client.patch(f"/api/v1/maintenance/{log_id_a}", json={"cost": 99.0}, headers=headers_b)).status_code == 404
+    assert (await client.delete(f"/api/v1/maintenance/{log_id_a}", headers=headers_b)).status_code == 404
+
+
+# ─── ETA Prediction Tests ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_predict_eta_endpoint(client, auth_headers):
+    resp = await client.post("/api/v1/predict/eta", json={
+        "distance_km": 120.0,
+        "stops_count": 3,
+        "cargo_weight_kg": 750.0,
+        "transport_mode": "road",
+    }, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "predicted_eta_minutes" in data
+    assert data["predicted_eta_minutes"] > 0
+    assert data["distance_km"] == 120.0
+    assert data["model_used"] in ("xgboost_v1", "heuristic_fallback")
+
+
+# ─── Multi-stop Route Optimization Tests ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_route_optimization_2opt(client, auth_headers):
+    stops = [
+        {"id": "s1", "label": "Depot", "latitude": 19.0, "longitude": 72.8},
+        {"id": "s2", "label": "Stop 1", "latitude": 19.2, "longitude": 73.0},
+        {"id": "s3", "label": "Stop 2", "latitude": 19.0, "longitude": 73.0},
+        {"id": "s4", "label": "Stop 3", "latitude": 19.2, "longitude": 72.8},
+    ]
+    resp = await client.post("/api/v1/dispatch/optimize/route", json={"stops": stops}, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "optimized_sequence" in data
+    assert "optimized_distance_km" in data
+    assert data["optimized_distance_km"] <= data["original_distance_km"]
+
+
+# ─── Anomaly Detection Tests ─────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_detect_anomalies_endpoint(client, auth_headers):
+    samples = [
+        {"vehicle_registration": "VH-NORMAL", "avg_speed_kmh": 50.0, "idle_time_minutes": 5.0, "fuel_rate_lph": 8.0, "harsh_braking_events": 0},
+        {"vehicle_registration": "VH-SPIKE", "avg_speed_kmh": 125.0, "idle_time_minutes": 55.0, "fuel_rate_lph": 24.0, "harsh_braking_events": 9},
+    ]
+    resp = await client.post("/api/v1/predict/anomalies", json={"samples": samples}, headers=auth_headers)
+    assert resp.status_code == 200
+    results = resp.json()
+    assert len(results) == 2
+    assert results[1]["is_anomaly"] is True
+    assert len(results[1]["reasons"]) > 0
+
+
+# ─── Dispatch AI Assistant Tests ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_dispatch_assistant_chat(client, auth_headers):
+    # 1. Query nearest vehicle
+    resp = await client.post("/api/v1/dispatch/assistant/chat", json={
+        "message": "Find nearest vehicle to Delhi Hub",
+    }, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "response" in data
+    assert len(data["tool_calls"]) > 0
+
+    # 2. Destructive assign attempt -> requires confirmation
+    resp_assign = await client.post("/api/v1/dispatch/assistant/chat", json={
+        "message": "Assign order 101 to nearest truck",
+    }, headers=auth_headers)
+    assert resp_assign.status_code == 200
+    data_assign = resp_assign.json()
+    assert data_assign["requires_confirmation"] is True
+
+    # 3. Confirmed assign -> executes
+    resp_confirm = await client.post("/api/v1/dispatch/assistant/chat", json={
+        "message": "Assign order 101 to nearest truck",
+        "confirm_action": data_assign["action_to_confirm"],
+    }, headers=auth_headers)
+    assert resp_confirm.status_code == 200
+    assert resp_confirm.json()["requires_confirmation"] is False
+
+
+# ─── Guest Demo Login Tests ──────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_guest_login_endpoint(client):
+    resp = await client.post("/api/v1/auth/guest")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "access_token" in data
+    assert data["role"] == "viewer"
+    assert data["email"] == "guest@cargonaut.io"
+
+
+
+
+
+
+

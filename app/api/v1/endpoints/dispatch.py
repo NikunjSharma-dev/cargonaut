@@ -24,12 +24,17 @@ from app.core.database import get_db
 from app.core.security import TokenPayload, get_current_user
 from app.models.models import Driver, Order, OrderStatus, TransportMode, mode_for_vehicle_type
 from app.schemas.schemas import (
+    AssistantChatRequest,
+    AssistantChatResponse,
     DispatchOptimizeRequest,
     DispatchOptimizeResponse,
     DispatchResult,
+    RouteOptimizeRequest,
+    RouteOptimizeResponse,
     UnassignedOrder,
 )
 from app.services.cargo_rules import check_compatibility, estimate_cost, estimate_duration_minutes
+from app.services.dispatch_assistant import process_dispatch_query
 
 router = APIRouter()
 
@@ -341,3 +346,98 @@ async def manually_assign_driver(
     order.status = OrderStatus.DISPATCHED
     await db.commit()
     return {"message": f"Order {order.order_number} assigned to {driver.full_name}"}
+
+
+@router.post("/optimize/route", response_model=RouteOptimizeResponse)
+@router.post("/route/optimize", response_model=RouteOptimizeResponse)
+async def optimize_multi_stop_route(
+    payload: RouteOptimizeRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    """
+    Multi-stop route optimization using 2-opt local search.
+    Returns optimized sequence vs original, total distances, and saved km.
+    """
+    raw_stops = [s.model_dump() for s in payload.stops]
+    n = len(raw_stops)
+
+    if n <= 2:
+        dist = 0.0
+        if n == 2:
+            dist = haversine_km(
+                raw_stops[0]["latitude"], raw_stops[0]["longitude"],
+                raw_stops[1]["latitude"], raw_stops[1]["longitude"]
+            )
+        return RouteOptimizeResponse(
+            original_sequence=list(range(n)),
+            optimized_sequence=list(range(n)),
+            original_distance_km=round(dist, 2),
+            optimized_distance_km=round(dist, 2),
+            distance_saved_km=0.0,
+            percentage_saved=0.0,
+            optimized_stops=payload.stops,
+        )
+
+    def route_distance(perm):
+        d = 0.0
+        for i in range(len(perm) - 1):
+            s1, s2 = raw_stops[perm[i]], raw_stops[perm[i + 1]]
+            d += haversine_km(s1["latitude"], s1["longitude"], s2["latitude"], s2["longitude"])
+        return d
+
+    original_seq = list(range(n))
+    original_dist = route_distance(original_seq)
+
+    best_seq = list(range(n))
+    best_dist = original_dist
+    improved = True
+
+    while improved:
+        improved = False
+        for i in range(1, n - 1):
+            for j in range(i + 1, n):
+                new_seq = best_seq[:i] + best_seq[i:j + 1][::-1] + best_seq[j + 1:]
+                new_dist = route_distance(new_seq)
+                if new_dist < best_dist - 1e-4:
+                    best_dist = new_dist
+                    best_seq = new_seq
+                    improved = True
+                    break
+            if improved:
+                break
+
+    saved_km = max(0.0, original_dist - best_dist)
+    pct_saved = (saved_km / original_dist * 100.0) if original_dist > 0 else 0.0
+    opt_stops = [payload.stops[idx] for idx in best_seq]
+
+    return RouteOptimizeResponse(
+        original_sequence=original_seq,
+        optimized_sequence=best_seq,
+        original_distance_km=round(original_dist, 2),
+        optimized_distance_km=round(best_dist, 2),
+        distance_saved_km=round(saved_km, 2),
+        percentage_saved=round(pct_saved, 1),
+        optimized_stops=opt_stops,
+    )
+
+
+@router.post("/assistant/chat", response_model=AssistantChatResponse)
+@router.post("/assistant", response_model=AssistantChatResponse)
+async def dispatch_assistant_chat(
+    payload: AssistantChatRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    """
+    Dispatch AI Assistant chat endpoint.
+    Executes typed tool calls with explicit confirmation safety gates for destructive actions.
+    """
+    res = await process_dispatch_query(
+        db=db,
+        tenant_id=current_user.tenant_id,
+        user_message=payload.message,
+        confirm_action=payload.confirm_action,
+    )
+    return AssistantChatResponse(**res)
+
+

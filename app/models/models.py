@@ -150,6 +150,16 @@ class ShiftStatus(str, PyEnum):
     CANCELLED = "cancelled"
 
 
+class MaintenanceType(str, PyEnum):
+    FUEL              = "fuel"
+    OIL_CHANGE        = "oil_change"
+    TIRE_ROTATION     = "tire_rotation"
+    REPAIR            = "repair"
+    INSPECTION        = "inspection"
+    SCHEDULED_SERVICE = "scheduled_service"
+
+
+
 class FuelType(str, PyEnum):
     PETROL   = "petrol"
     DIESEL   = "diesel"
@@ -543,3 +553,30 @@ class GeofenceEvent(Base):
         # Occupancy lookup: latest state per (vehicle, fence)
         Index("ix_geofence_events_vehicle_fence", "vehicle_id", "geofence_id", "occurred_at"),
     )
+
+
+# ─── Maintenance Log ─────────────────────────────────────────────────────────
+
+class MaintenanceLog(Base):
+    """Fuel & maintenance event record for a vehicle."""
+    __tablename__ = "maintenance_logs"
+
+    id         = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id  = Column(UUID(as_uuid=False), ForeignKey("tenants.id",  ondelete="CASCADE"), nullable=False, index=True)
+    vehicle_id = Column(UUID(as_uuid=False), ForeignKey("vehicles.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    type       = Column(Enum(MaintenanceType), nullable=False)
+    cost       = Column(Float, nullable=False)
+    odometer   = Column(Float, nullable=False)
+    date       = Column(DateTime(timezone=True), nullable=False)
+    notes      = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    vehicle = relationship("Vehicle")
+
+    __table_args__ = (
+        Index("ix_maintenance_logs_tenant_date", "tenant_id", "date"),
+    )
+

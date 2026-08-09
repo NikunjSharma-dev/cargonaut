@@ -4,7 +4,7 @@ import {
   LayoutGrid, Package, Truck, Users, UserRound,
   Navigation, BarChart3, Settings, LogOut, Radar,
   Warehouse, X, Plus, ChevronRight, ChevronDown,
-  Bell, Zap, Smartphone, FileBarChart, LineChart, CalendarClock,
+  Bell, Zap, Smartphone, FileBarChart, LineChart, CalendarClock, Wrench,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { initials } from '../../utils/helpers'
@@ -26,6 +26,7 @@ const NAV_ITEMS = [
       { to: '/orders', icon: Package, label: 'Cargos', badge: 2 },
       { to: '/drivers', icon: UserRound, label: 'Drivers' },
       { to: '/shifts', icon: CalendarClock, label: 'Shifts' },
+      { to: '/maintenance', icon: Wrench, label: 'Maintenance' },
       { to: '/driver-view', icon: Smartphone, label: 'Driver App' },
       { to: '/analytics', icon: FileBarChart, label: 'Reports', badge: 2 },
     ],
@@ -68,6 +69,22 @@ export default function Sidebar({ mobileOpen, onClose, onOpenCreateOrder, collap
     logout()
     navigate('/login')
   }
+
+  const isDriver = user?.role === 'driver'
+
+  const filteredNav = NAV_ITEMS.map(item => {
+    if (isDriver) {
+      if (item.to && !['/dashboard', '/tracking', '/shifts', '/driver-view'].includes(item.to)) {
+        return null
+      }
+      if (item.children) {
+        const allowedChildren = item.children.filter(c => ['/dashboard', '/tracking', '/shifts', '/driver-view'].includes(c.to))
+        if (allowedChildren.length === 0) return null
+        return { ...item, children: allowedChildren }
+      }
+    }
+    return item
+  }).filter(Boolean)
 
   return (
     <>
@@ -117,7 +134,7 @@ export default function Sidebar({ mobileOpen, onClose, onOpenCreateOrder, collap
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto no-scrollbar py-4">
           <ul className="space-y-0.5">
-            {NAV_ITEMS.map(item => {
+            {filteredNav.map(item => {
               const Icon = item.icon
 
               // Flat link

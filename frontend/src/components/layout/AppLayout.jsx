@@ -18,6 +18,7 @@ const PAGE_TITLES = {
   '/geofences':   'Geofences & Zone Alerts',
   '/drivers':     'Drivers Management',
   '/shifts':      'Driver Shifts & Scheduling',
+  '/maintenance': 'Fuel & Maintenance Logs',
   '/driver-view': 'Driver Mobile Terminal',
   '/fleet':       'Fleet Assets & Vehicles',
   '/hubs':        'Hubs & Warehouses',

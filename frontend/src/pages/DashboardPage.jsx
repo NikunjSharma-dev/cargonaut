@@ -173,29 +173,9 @@ export default function DashboardPage() {
       {/* Top KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
-          label="Active Multi-Modal Orders"
-          value={s.orders_in_transit ?? 42}
-          comparisonText="+13% vs last month"
-          icon={Package}
-          trend={13}
-          trendPositive={true}
-          sparklineData={activeShipmentsSpark}
-          theme="blue"
-        />
-        <StatCard
-          label="Air Cargo Share"
-          value={`${s.air_freight_share_pct ?? 42.9}%`}
-          comparisonText={`${s.air_orders ?? 3} Air / ${s.road_orders ?? 4} Road`}
-          icon={Plane}
-          trend={18.5}
-          trendPositive={true}
-          sparklineData={airFreightSpark}
-          theme="purple"
-        />
-        <StatCard
           label="On-Time SLA Rate"
-          value="97.8%"
-          comparisonText="+2.4% vs last month"
+          value={`${s.on_time_rate_pct ?? 95.8}%`}
+          comparisonText={`SLA breach rate: ${s.sla_breach_rate ?? 0}%`}
           icon={CheckCircle2}
           trend={2.4}
           trendPositive={true}
@@ -203,9 +183,9 @@ export default function DashboardPage() {
           theme="green"
         />
         <StatCard
-          label="Fleet Utilization"
-          value="91.2%"
-          comparisonText={`${s.air_capable_vehicles ?? 2} Freighters Active`}
+          label="Active Fleet Vehicles"
+          value={`${s.available_vehicles ?? 3} / ${s.total_vehicles ?? 5}`}
+          comparisonText={`${s.active_drivers ?? 2} Drivers Assigned`}
           icon={Truck}
           trend={8.5}
           trendPositive={true}
@@ -213,14 +193,34 @@ export default function DashboardPage() {
           theme="amber"
         />
         <StatCard
-          label="SLA Exceptions"
-          value={s.sla_breach_count ?? 0}
-          comparisonText="No active air/road breaches"
-          icon={AlertTriangle}
-          trend={-40}
+          label="Avg Delivery Time"
+          value={`${s.avg_delivery_time_hours ?? 2.4} hrs`}
+          comparisonText="Avg transit cycle time"
+          icon={Clock}
+          trend={-5.2}
+          trendPositive={true}
+          sparklineData={activeShipmentsSpark}
+          theme="blue"
+        />
+        <StatCard
+          label="Distance Traveled Today"
+          value={`${s.distance_today_km?.toLocaleString() ?? 1280} km`}
+          comparisonText="Combined fleet stage length"
+          icon={TrendingUp}
+          trend={12.0}
+          trendPositive={true}
+          sparklineData={airFreightSpark}
+          theme="purple"
+        />
+        <StatCard
+          label="Active Orders In-Transit"
+          value={s.orders_in_transit ?? 42}
+          comparisonText={`${s.orders_delivered_today ?? 8} Delivered Today`}
+          icon={Package}
+          trend={13}
           trendPositive={true}
           sparklineData={exceptionsSpark}
-          theme="coral"
+          theme="blue"
         />
       </div>
 

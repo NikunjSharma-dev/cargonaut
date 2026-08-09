@@ -49,6 +49,11 @@ export default function AnalyticsPage() {
     queryFn: () => api.get('/analytics/fleet/utilization').then(r => r.data),
   })
 
+  const { data: anomalies } = useQuery({
+    queryKey: ['fleet-anomalies'],
+    queryFn: () => api.get('/predict/anomalies').then(r => r.data),
+  })
+
   if (isLoading) return <PageLoader />
 
   const s = stats || {}
@@ -167,6 +172,63 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {/* AI Fleet Anomaly Detection Panel */}
+      <div className="card space-y-4 border-app-border">
+        <div className="flex items-center justify-between pb-3 border-b border-app-border">
+          <div>
+            <h3 className="text-sm font-bold text-heading flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              AI Telemetry Anomaly Panel (Isolation Forest)
+            </h3>
+            <p className="text-xs text-muted">Periodic multi-variate statistical anomaly scoring on speed, idle time, fuel rate & braking</p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            {anomalies?.filter(a => a.is_anomaly).length || 0} Flagged Anomalies
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {anomalies?.map((item, idx) => (
+            <div
+              key={item.vehicle_id || idx}
+              className={`p-4 rounded-xl border ${
+                item.is_anomaly
+                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+                  : 'bg-app-panel border-app-border text-heading'
+              } space-y-2`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono font-bold text-sm text-heading">{item.vehicle_registration}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                  item.is_anomaly ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'
+                }`}>
+                  {item.is_anomaly ? `Anomaly Score ${(item.anomaly_score * 100).toFixed(0)}%` : 'Normal'}
+                </span>
+              </div>
+
+              <div className="text-xs text-muted grid grid-cols-2 gap-2 pt-1">
+                <div>Avg Speed: <strong className="text-heading">{item.avg_speed_kmh} km/h</strong></div>
+                <div>Idle Time: <strong className="text-heading">{item.idle_time_minutes} min</strong></div>
+                <div>Fuel Rate: <strong className="text-heading">{item.fuel_rate_lph} L/h</strong></div>
+                <div>Harsh Brakes: <strong className="text-heading">{item.harsh_braking_events}</strong></div>
+              </div>
+
+              {item.is_anomaly && item.reasons?.length > 0 && (
+                <div className="pt-2 border-t border-rose-500/20 space-y-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-rose-400">Reasons:</p>
+                  <ul className="text-xs space-y-1 pl-4 list-disc text-rose-300">
+                    {item.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
+

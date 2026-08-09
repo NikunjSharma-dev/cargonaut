@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Zap, CheckSquare, Square, MapPin, User, ArrowRight, ShieldCheck, Plane, Truck, AlertTriangle, Scale } from 'lucide-react'
+import { Zap, CheckSquare, Square, MapPin, User, ArrowRight, ShieldCheck, Plane, Truck, AlertTriangle, Scale, Route, Sparkles, Bot } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api, { apiStatus } from '../utils/api'
-import { PageLoader, EmptyState, StatusBadge, CargoBadge, TransportModeBadge } from '../components/ui'
+import { PageLoader, EmptyState, StatusBadge, CargoBadge, TransportModeBadge, Modal, FormField, Spinner } from '../components/ui'
+import DispatchAssistantModal from '../components/DispatchAssistantModal'
 import { fmtKm } from '../utils/helpers'
 import { cargoMeta, incompatibilityReason } from '../utils/cargo'
 import clsx from 'clsx'
@@ -11,8 +12,10 @@ import clsx from 'clsx'
 export default function DispatchPage() {
   const [selected, setSelected] = useState(new Set())
   const [result, setResult] = useState(null)
+  const [routeOptResult, setRouteOptResult] = useState(null)
   const [optimMode, setOptimMode] = useState('distance')
   const [modeFilter, setModeFilter] = useState('')
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false)
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ['dispatchable-orders', modeFilter],
@@ -22,26 +25,6 @@ export default function DispatchPage() {
       return api.get('/orders/', { params }).then(r => r.data)
     },
   })
-
-  const DEMO_ORDERS = [
-    {
-      id: '101', order_number: 'ORD-9421', customer_name: 'Acme Retail Corp',
-      delivery_city: 'Delhi', delivery_address: 'Terminal 4 Industrial',
-      weight_kg: 14200, transport_mode: 'road', cargo_type: 'general'
-    },
-    {
-      id: '105', order_number: 'ORD-9425', customer_name: 'Helios Pharma',
-      delivery_city: 'Delhi', delivery_address: 'Cargo Terminal 2, IGI',
-      weight_kg: 2400, volume_m3: 19.5, chargeable_weight_kg: 3256.5,
-      transport_mode: 'air', cargo_type: 'refrigerated', air_waybill_number: '731-40028115', flight_number: 'CG412'
-    },
-    {
-      id: '107', order_number: 'ORD-9427', customer_name: 'Vector Industrial',
-      delivery_city: 'Bengaluru', delivery_address: 'Cargo Village Gate 4',
-      weight_kg: 1950, volume_m3: 14.0, chargeable_weight_kg: 2338,
-      transport_mode: 'air', cargo_type: 'hazmat', air_waybill_number: '731-40028117', flight_number: 'CG377', hazmat_un_code: 'UN1263'
-    },
-  ]
 
   const { data: drivers } = useQuery({
     queryKey: ['available-drivers'],
@@ -57,239 +40,308 @@ export default function DispatchPage() {
     onError: err => toast.error(err.response?.data?.detail || 'Optimization failed'),
   })
 
-  const isDemoData = !orders?.items && apiStatus.offline
-  const orderItems = orders?.items ?? (isDemoData ? DEMO_ORDERS : [])
+  const DEFAULT_STOPS = [
+    { id: 's1', label: 'Hub A (Central Depot)', latitude: 19.0760, longitude: 72.8777 },
+    { id: 's2', label: 'Stop B (Bandra West)', latitude: 19.0596, longitude: 72.8295 },
+    { id: 's3', label: 'Stop C (Thane West)', latitude: 19.2183, longitude: 72.9781 },
+    { id: 's4', label: 'Stop D (Andheri East)', latitude: 19.1197, longitude: 72.8464 },
+    { id: 's5', label: 'Stop E (Navi Mumbai)', latitude: 19.0330, longitude: 73.0297 },
+  ]
 
-  function toggleAll() {
-    if (selected.size === orderItems.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(orderItems.map(o => o.id)))
-    }
-  }
+  const optimizeRoute = useMutation({
+    mutationFn: stops => api.post('/dispatch/optimize/route', { stops }).then(r => r.data),
+    onSuccess: data => {
+      setRouteOptResult(data)
+      toast.success(`2-Opt Optimization complete! Saved ${data.distance_saved_km} km (${data.percentage_saved}%)`)
+    },
+    onError: () => toast.error('Route optimization failed'),
+  })
 
-  function toggle(id) {
-    setSelected(s => {
-      const ns = new Set(s)
-      ns.has(id) ? ns.delete(id) : ns.add(id)
-      return ns
+  const displayOrders = orders?.items || []
+
+  function toggleSelect(id) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
     })
   }
 
-  function runOptimize() {
-    if (selected.size === 0) return toast.error('Select at least one order')
+  function toggleAll() {
+    if (selected.size === displayOrders.length) setSelected(new Set())
+    else setSelected(new Set(displayOrders.map(o => o.id)))
+  }
+
+  function handleOptimize() {
+    if (selected.size === 0) {
+      toast.error('Select at least one order to optimize')
+      return
+    }
     optimize.mutate({
       order_ids: Array.from(selected),
       optimization_mode: optimMode,
-      transport_mode: modeFilter || undefined,
-      max_orders_per_driver: 20,
-      respect_capacity: true,
     })
   }
 
-  const driverMap = {}
-  drivers?.forEach(d => { driverMap[d.id] = d })
+  const driverMap = (drivers || []).reduce((acc, d) => ({ ...acc, [d.id]: d }), {})
+
+  if (isLoading) return <PageLoader message="Loading dispatch control center..." />
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="p-6 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="page-title">Multi-Modal Dispatch & Route Solver</h2>
-          <p className="text-xs text-muted mt-0.5">Mode-aware VRP solver for road trucking & freighter air cargo dispatch</p>
+          <h1 className="text-[28px] font-extrabold text-heading font-display tracking-tight">
+            Dispatch & Route Optimization
+          </h1>
+          <p className="text-sm text-muted">
+            CVRP multi-stop optimization & 2-Opt local search solver.
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          {/* Mode Selector */}
-          <div className="flex items-center p-1 bg-app-panel rounded-xl border border-app-border">
-            <button
-              onClick={() => setModeFilter('')}
-              className={clsx('px-2.5 py-1 rounded-lg text-xs font-semibold transition-all', !modeFilter ? 'bg-app-surface text-primary shadow-2xs font-bold' : 'text-muted hover:text-heading')}
-            >
-              All Modes
-            </button>
-            <button
-              onClick={() => setModeFilter('road')}
-              className={clsx('flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all', modeFilter === 'road' ? 'bg-emerald-50 text-emerald-700 font-bold border border-emerald-200' : 'text-muted hover:text-heading')}
-            >
-              <Truck size={12} /> Road
-            </button>
-            <button
-              onClick={() => setModeFilter('air')}
-              className={clsx('flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all', modeFilter === 'air' ? 'bg-purple-50 text-purple-700 font-bold border border-purple-200' : 'text-muted hover:text-heading')}
-            >
-              <Plane size={12} /> Air Cargo
-            </button>
-          </div>
-
+        <div className="flex items-center gap-3">
           <select
-            className="select text-xs h-9 w-32 bg-app-surface border-app-border"
-            value={optimMode}
-            onChange={e => setOptimMode(e.target.value)}
+            value={modeFilter}
+            onChange={e => setModeFilter(e.target.value)}
+            className="select text-sm py-1.5"
           >
-            <option value="distance">Min Distance</option>
-            <option value="time">Min Time</option>
-            <option value="cost">Min Cost</option>
+            <option value="">All Modes (Road + Air)</option>
+            <option value="road">Road Freight Only</option>
+            <option value="air">Air Cargo Only</option>
           </select>
 
           <button
-            className="btn-primary text-xs py-2 px-4 rounded-xl shadow-xs flex items-center gap-1.5"
-            onClick={runOptimize}
-            disabled={optimize.isPending || selected.size === 0}
+            onClick={() => setIsAssistantOpen(true)}
+            className="btn-secondary inline-flex items-center gap-2 border-primary/30 text-primary hover:bg-primary-soft"
           >
-            {optimize.isPending ? (
-              <span className="flex items-center gap-2">
-                <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Solving VRP…
-              </span>
-            ) : (
-              <><Zap size={15} /> Run Dispatch Solver ({selected.size})</>
-            )}
+            <Bot size={16} /> AI Dispatch Assistant
+          </button>
+
+          <button
+            onClick={handleOptimize}
+            disabled={optimize.isPending}
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            {optimize.isPending ? <Spinner size="sm" /> : <Zap size={16} />}
+            Run Dispatch Solver ({selected.size})
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Order Selection Panel */}
-        <div className="lg:col-span-2 card p-0 overflow-hidden shadow-card border-app-border">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-app-border bg-app-panel/50">
-            <div className="flex items-center gap-3">
-              <button onClick={toggleAll} className="text-subtle hover:text-primary transition-colors">
-                {orderItems.length > 0 && selected.size === orderItems.length
-                  ? <CheckSquare size={18} className="text-primary" />
-                  : <Square size={18} />
-                }
-              </button>
-              <span className="text-xs font-bold text-heading">
-                Confirmed Freight Orders ({orderItems.length})
-              </span>
-            </div>
-            {selected.size > 0 && (
-              <span className="text-xs font-bold text-primary bg-primary-soft px-2.5 py-0.5 rounded-full border border-primary/25">
-                {selected.size} selected
-              </span>
-            )}
-          </div>
-
-          {isLoading ? (
-            <PageLoader />
-          ) : orderItems.length === 0 ? (
-            <EmptyState
-              icon={Zap}
-              title="No confirmed orders"
-              description="Confirmed road or air cargo orders appear here ready for dispatch optimization."
-            />
-          ) : (
-            <div className="divide-y divide-app-border max-h-[520px] overflow-y-auto">
-              {orderItems.map(order => {
-                const checked = selected.has(order.id)
-                return (
-                  <div
-                    key={order.id}
-                    onClick={() => toggle(order.id)}
-                    className={clsx(
-                      'flex items-center gap-3 px-5 py-3.5 cursor-pointer transition-colors',
-                      checked ? 'bg-primary-soft/40' : 'hover:bg-app-panel'
-                    )}
-                  >
-                    <button className="text-subtle flex-shrink-0">
-                      {checked
-                        ? <CheckSquare size={18} className="text-primary" />
-                        : <Square size={18} />
-                      }
-                    </button>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-mono text-xs font-bold text-primary">{order.order_number}</span>
-                        <TransportModeBadge mode={order.transport_mode || 'road'} />
-                        <CargoBadge type={order.cargo_type || 'general'} />
-                        <span className="text-xs font-semibold text-heading truncate">{order.customer_name}</span>
-                      </div>
-                      <p className="text-xs text-muted truncate flex items-center gap-1">
-                        <MapPin size={13} className="flex-shrink-0 text-accent" />
-                        {order.delivery_address}, {order.delivery_city}
-                      </p>
-                    </div>
-
-                    <div className="text-right flex-shrink-0 text-xs font-mono font-medium text-heading">
-                      <p>{(order.chargeable_weight_kg || order.weight_kg || 0).toLocaleString()} kg</p>
-                      {order.air_waybill_number && (
-                        <p className="text-[10px] text-purple-700 font-bold">AWB {order.air_waybill_number}</p>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Results Panel */}
-        <div className="card space-y-4 shadow-card border-app-border">
-          <div className="pb-3 border-b border-app-border">
-            <h3 className="text-sm font-bold text-heading">Dispatch Plan Summary</h3>
-            <p className="text-xs text-muted">Solvers: Google OR-Tools VRP</p>
-          </div>
-
-          {!result ? (
-            <div className="text-center py-12 text-muted text-xs space-y-2">
-              <Zap size={28} className="mx-auto text-primary opacity-40" />
-              <p>Select orders and click "Run Dispatch Solver" to optimize carrier routes and air leg planning</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="bg-app-panel rounded-xl p-3 border border-app-border">
-                  <p className="text-[10px] text-muted font-semibold uppercase">Execution Time</p>
-                  <p className="text-sm font-extrabold text-heading font-mono">{(result.optimization_time_ms ?? 0).toFixed(0)} ms</p>
-                </div>
-                <div className="bg-app-panel rounded-xl p-3 border border-app-border">
-                  <p className="text-[10px] text-muted font-semibold uppercase">Total Distance</p>
-                  <p className="text-sm font-extrabold text-heading font-mono">
-                    {fmtKm((result.assignments || []).reduce((sum, a) => sum + (a.estimated_distance_km || 0), 0))}
-                  </p>
-                </div>
+        {/* Left Column: Dispatchable Orders */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="card p-4 space-y-4 border-app-border">
+            <div className="flex items-center justify-between pb-3 border-b border-app-border">
+              <div className="flex items-center gap-3">
+                <button onClick={toggleAll} className="text-subtle hover:text-heading">
+                  {selected.size > 0 && selected.size === displayOrders.length ? (
+                    <CheckSquare size={18} className="text-primary" />
+                  ) : (
+                    <Square size={18} />
+                  )}
+                </button>
+                <h2 className="text-base font-bold text-heading">
+                  Confirmed Orders ({displayOrders.length})
+                </h2>
               </div>
+              <span className="text-xs font-semibold text-primary bg-primary-soft border border-primary/20 px-2.5 py-1 rounded-full">
+                {selected.size} Selected
+              </span>
+            </div>
 
-              <div className="space-y-3">
-                <p className="text-[11px] font-bold text-heading uppercase tracking-wider">Assigned Carriers & Flight Crew</p>
-                {(result.assignments || []).map((a) => {
-                  const driver = driverMap[a.driver_id]
-                  const orderIds = a.assigned_order_ids || []
-                  const isAir = a.transport_mode === 'air'
+            {displayOrders.length === 0 ? (
+              <EmptyState
+                icon={Zap}
+                title="No confirmed orders ready for dispatch"
+                description="Create or confirm orders to run VRP optimization."
+              />
+            ) : (
+              <div className="divide-y divide-app-border max-h-[500px] overflow-y-auto pr-1">
+                {displayOrders.map(order => {
+                  const isChecked = selected.has(order.id)
                   return (
-                    <div key={a.driver_id} className="p-3 bg-app-panel rounded-xl border border-app-border space-y-1.5 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-heading flex items-center gap-1.5">
-                          <User size={14} className="text-primary" />
-                          {a.driver_name || driver?.full_name || 'Carrier'}
-                        </span>
-                        <TransportModeBadge mode={a.transport_mode || 'road'} />
+                    <div
+                      key={order.id}
+                      onClick={() => toggleSelect(order.id)}
+                      className={clsx(
+                        'py-3 px-2 rounded-lg cursor-pointer transition-colors flex items-center gap-3',
+                        isChecked ? 'bg-primary-soft/40' : 'hover:bg-app-surface/60'
+                      )}
+                    >
+                      <button type="button" className="text-subtle">
+                        {isChecked ? <CheckSquare size={18} className="text-primary" /> : <Square size={18} />}
+                      </button>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-mono text-xs font-bold text-primary">{order.order_number}</span>
+                          <TransportModeBadge mode={order.transport_mode || 'road'} />
+                          <CargoBadge type={order.cargo_type || 'general'} />
+                          <span className="text-xs font-semibold text-heading truncate">{order.customer_name}</span>
+                        </div>
+                        <p className="text-xs text-muted truncate flex items-center gap-1">
+                          <MapPin size={13} className="flex-shrink-0 text-primary" />
+                          {order.delivery_address}, {order.delivery_city}
+                        </p>
                       </div>
-                      <div className="text-[11px] font-mono text-muted break-all">
-                        {orderIds.length} orders assigned: {orderIds.join(', ') || 'None'}
+
+                      <div className="text-right flex-shrink-0 text-xs font-mono font-medium text-heading">
+                        <p>{(order.chargeable_weight_kg || order.weight_kg || 0).toLocaleString()} kg</p>
                       </div>
                     </div>
                   )
                 })}
-
-                {result.unassigned && result.unassigned.length > 0 && (
-                  <div className="pt-2 border-t border-app-border space-y-2">
-                    <p className="text-[11px] font-bold text-danger uppercase tracking-wider flex items-center gap-1">
-                      <AlertTriangle size={14} /> Unassigned Orders ({result.unassigned.length})
-                    </p>
-                    {result.unassigned.map(u => (
-                      <div key={u.order_id} className="p-2 bg-red-50 text-danger border border-red-200 rounded-lg text-[11px]">
-                        <span className="font-mono font-bold">{u.order_number}:</span> {u.reason}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
+            )}
+          </div>
+
+          {/* 2-OPT Route Sequence Optimizer Comparison Section */}
+          <div className="card p-5 space-y-4 border-app-border bg-app-panel">
+            <div className="flex items-center justify-between pb-3 border-b border-app-border">
+              <div className="flex items-center gap-2">
+                <Route className="w-5 h-5 text-primary" />
+                <h2 className="text-base font-bold text-heading">
+                  Multi-Stop Route Optimizer (2-Opt Local Search)
+                </h2>
+              </div>
+              <button
+                onClick={() => optimizeRoute.mutate(DEFAULT_STOPS)}
+                disabled={optimizeRoute.isPending}
+                className="btn-secondary text-xs inline-flex items-center gap-1.5"
+              >
+                {optimizeRoute.isPending ? <Spinner size="sm" /> : <Sparkles size={14} className="text-amber-400" />}
+                Run 2-Opt Test ({DEFAULT_STOPS.length} stops)
+              </button>
             </div>
-          )}
+
+            {!routeOptResult ? (
+              <p className="text-xs text-muted">
+                Click "Run 2-Opt Test" to optimize a multi-stop route sequence and compare original vs un-crossed 2-Opt distances.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="p-3 bg-app-surface rounded-xl border border-app-border">
+                    <p className="text-[10px] font-semibold text-muted uppercase">Original Dist.</p>
+                    <p className="text-sm font-extrabold text-heading font-mono">{routeOptResult.original_distance_km} km</p>
+                  </div>
+                  <div className="p-3 bg-app-surface rounded-xl border border-app-border">
+                    <p className="text-[10px] font-semibold text-muted uppercase">2-Opt Dist.</p>
+                    <p className="text-sm font-extrabold text-emerald-400 font-mono">{routeOptResult.optimized_distance_km} km</p>
+                  </div>
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                    <p className="text-[10px] font-semibold text-emerald-400 uppercase">Saved</p>
+                    <p className="text-sm font-extrabold text-emerald-400 font-mono">
+                      -{routeOptResult.distance_saved_km} km ({routeOptResult.percentage_saved}%)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div className="p-3 bg-app-surface rounded-xl border border-app-border space-y-2">
+                    <p className="font-bold text-heading uppercase text-[10px]">Original Sequence</p>
+                    <ol className="space-y-1 text-muted font-mono">
+                      {routeOptResult.original_sequence.map((idx, step) => (
+                        <li key={idx} className="flex items-center gap-2">
+                          <span className="w-4 h-4 rounded-full bg-app-panel text-heading text-[10px] flex items-center justify-center font-bold">{step + 1}</span>
+                          <span>{DEFAULT_STOPS[idx].label}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div className="p-3 bg-app-surface rounded-xl border border-app-border space-y-2">
+                    <p className="font-bold text-emerald-400 uppercase text-[10px] flex items-center gap-1">
+                      <Sparkles size={12} /> 2-Opt Optimized Sequence
+                    </p>
+                    <ol className="space-y-1 text-heading font-mono">
+                      {routeOptResult.optimized_sequence.map((idx, step) => (
+                        <li key={idx} className="flex items-center gap-2 font-semibold">
+                          <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] flex items-center justify-center font-bold">{step + 1}</span>
+                          <span>{DEFAULT_STOPS[idx].label}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Dispatch Solver Summary */}
+        <div className="space-y-4">
+          <div className="card p-4 space-y-4 border-app-border">
+            <div className="pb-3 border-b border-app-border">
+              <h3 className="text-sm font-bold text-heading">VRP Solver Results</h3>
+              <p className="text-xs text-muted">Multi-tenant fleet capacity matching</p>
+            </div>
+
+            {!result ? (
+              <div className="text-center py-12 text-muted text-xs space-y-2">
+                <Zap size={28} className="mx-auto text-primary opacity-40" />
+                <p>Select orders and click "Run Dispatch Solver" to optimize carrier routes.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="bg-app-panel rounded-xl p-3 border border-app-border">
+                    <p className="text-[10px] text-muted font-semibold uppercase">Execution Time</p>
+                    <p className="text-sm font-extrabold text-heading font-mono">{(result.optimization_time_ms ?? 0).toFixed(0)} ms</p>
+                  </div>
+                  <div className="bg-app-panel rounded-xl p-3 border border-app-border">
+                    <p className="text-[10px] text-muted font-semibold uppercase">Total Distance</p>
+                    <p className="text-sm font-extrabold text-heading font-mono">
+                      {fmtKm((result.assignments || []).reduce((sum, a) => sum + (a.estimated_distance_km || 0), 0))}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-[11px] font-bold text-heading uppercase tracking-wider">Assigned Carriers</p>
+                  {(result.assignments || []).map((a) => {
+                    const driver = driverMap[a.driver_id]
+                    const orderIds = a.assigned_order_ids || []
+                    return (
+                      <div key={a.driver_id} className="p-3 bg-app-panel rounded-xl border border-app-border space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-heading flex items-center gap-1.5">
+                            <User size={14} className="text-primary" />
+                            {a.driver_name || driver?.full_name || 'Carrier'}
+                          </span>
+                          <TransportModeBadge mode={a.transport_mode || 'road'} />
+                        </div>
+                        <div className="text-[11px] font-mono text-muted break-all">
+                          {orderIds.length} orders assigned: {orderIds.join(', ') || 'None'}
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {result.unassigned && result.unassigned.length > 0 && (
+                    <div className="pt-2 border-t border-app-border space-y-2">
+                      <p className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                        <AlertTriangle size={14} /> Unassigned Orders ({result.unassigned.length})
+                      </p>
+                      {result.unassigned.map(u => (
+                        <div key={u.order_id} className="p-2 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-lg text-[11px]">
+                          <span className="font-mono font-bold">{u.order_number}:</span> {u.reason}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {isAssistantOpen && (
+        <DispatchAssistantModal onClose={() => setIsAssistantOpen(false)} />
+      )}
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Search, Phone, MessageSquare, Pencil, Camera, Maximize2, MapPin, Truck as TruckIcon,
-  Plane, Gauge,
+  Plane, Gauge, Sparkles,
 } from 'lucide-react'
 import api from '../utils/api'
 import clsx from 'clsx'
@@ -380,6 +380,17 @@ export default function TrackingPage() {
   const chargeable = chargeableWeightKg(selected.loadKg, selected.volumeM3, selected.mode)
   const billedOnVolume = isVolumetric(selected.loadKg, selected.volumeM3, selected.mode)
 
+  const etaQuery = useQuery({
+    queryKey: ['predict-eta', selected.id, selected.loadKg, selected.mode],
+    queryFn: () => api.post('/predict/eta', {
+      distance_km: 120.0,
+      stops_count: selected.stops?.length || 1,
+      cargo_weight_kg: selected.loadKg || 500.0,
+      transport_mode: selected.mode || 'road',
+    }).then(r => r.data),
+    enabled: Boolean(selected),
+  })
+
   return (
     <div className="flex flex-col lg:flex-row h-full min-h-0 bg-app-panel">
       {/* ---------- Middle column: fleet list ---------- */}
@@ -612,6 +623,12 @@ export default function TrackingPage() {
                       {formatClock(selected.seconds - elapsed)}
                     </span>
                     <span className="text-[13px] text-muted">{selected.minsLeft} min. left</span>
+                    {etaQuery.data?.predicted_eta_minutes && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title={`Model: ${etaQuery.data.model_used}`}>
+                        <Sparkles size={13} />
+                        AI ETA: {etaQuery.data.predicted_eta_minutes} min
+                      </span>
+                    )}
                     <button className="btn-secondary text-[13px] py-1.5">
                       <Pencil size={14} /> {isAir ? 'Change Routing' : 'Change Route'}
                     </button>

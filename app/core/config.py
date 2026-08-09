@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-this-in-production-use-256bit-random-key"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    DEMO_MODE: bool = True
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://fleetforge:password@localhost:5432/fleetforge"

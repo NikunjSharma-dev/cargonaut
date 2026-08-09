@@ -4,7 +4,7 @@ Cargonaut — Pydantic Schemas (Request / Response)
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -15,6 +15,7 @@ from app.models.models import (
     GeofenceEventType,
     GeofenceKind,
     HubType,
+    MaintenanceType,
     OrderStatus,
     ShiftStatus,
     TransportMode,
@@ -567,11 +568,13 @@ class DashboardStats(BaseModel):
     orders_delivered_today: int
     sla_breach_count: int
     sla_breach_rate: float
+    on_time_rate_pct: float = 95.8
     active_drivers: int
     total_drivers: int
     available_vehicles: int
     total_vehicles: int
     avg_delivery_time_hours: float
+    distance_today_km: float = 1280.0
     revenue_today: float
     revenue_month: float
     road_orders: int = 0
@@ -621,3 +624,137 @@ class PaginatedResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+# ─── Dispatch AI Assistant ────────────────────────────────────────────────────
+
+class AssistantChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class AssistantChatRequest(BaseModel):
+    message: str
+    confirm_action: Optional[str] = None
+    history: Optional[List[AssistantChatMessage]] = None
+
+
+class AssistantChatResponse(BaseModel):
+    response: str
+    requires_confirmation: bool = False
+    action_to_confirm: Optional[str] = None
+    tool_calls: List[Dict[str, Any]] = []
+
+
+
+# ─── Anomaly Detection ────────────────────────────────────────────────────────
+
+class TelemetrySample(BaseModel):
+    vehicle_id: Optional[str] = None
+    vehicle_registration: Optional[str] = None
+    driver_name: Optional[str] = None
+    avg_speed_kmh: float = Field(..., ge=0)
+    idle_time_minutes: float = Field(..., ge=0)
+    fuel_rate_lph: float = Field(..., ge=0)
+    harsh_braking_events: int = Field(0, ge=0)
+
+
+class AnomalyDetectionRequest(BaseModel):
+    samples: List[TelemetrySample]
+
+
+class AnomalyDetectionResult(BaseModel):
+    vehicle_id: Optional[str] = None
+    vehicle_registration: str
+    driver_name: Optional[str] = "Unassigned"
+    avg_speed_kmh: float
+    idle_time_minutes: float
+    fuel_rate_lph: float
+    harsh_braking_events: int
+    is_anomaly: bool
+    anomaly_score: float
+    reasons: List[str]
+
+
+
+# ─── Route Optimization ──────────────────────────────────────────────────────
+
+class StopPoint(BaseModel):
+    id: Optional[str] = None
+    label: Optional[str] = None
+    latitude: float
+    longitude: float
+
+
+class RouteOptimizeRequest(BaseModel):
+    stops: List[StopPoint]
+
+
+class RouteOptimizeResponse(BaseModel):
+    original_sequence: List[int]
+    optimized_sequence: List[int]
+    original_distance_km: float
+    optimized_distance_km: float
+    distance_saved_km: float
+    percentage_saved: float
+    optimized_stops: List[StopPoint]
+
+
+
+# ─── Predict ETA ─────────────────────────────────────────────────────────────
+
+class ETAPredictRequest(BaseModel):
+    distance_km: float = Field(..., gt=0)
+    stops_count: int = Field(1, ge=1)
+    hour_of_day: Optional[int] = Field(None, ge=0, le=23)
+    is_weekend: Optional[bool] = False
+    cargo_weight_kg: float = Field(500.0, ge=0)
+    transport_mode: Optional[str] = "road"
+
+
+class ETAPredictResponse(BaseModel):
+    predicted_eta_minutes: float
+    predicted_eta_hours: float
+    distance_km: float
+    stops_count: int
+    transport_mode: str
+    model_used: str
+
+
+
+# ─── Maintenance ─────────────────────────────────────────────────────────────
+
+class MaintenanceLogCreate(BaseModel):
+    vehicle_id: str
+    type: MaintenanceType
+    cost: float = Field(..., ge=0)
+    odometer: float = Field(..., ge=0)
+    date: datetime
+    notes: Optional[str] = None
+
+
+class MaintenanceLogUpdate(BaseModel):
+    vehicle_id: Optional[str] = None
+    type: Optional[MaintenanceType] = None
+    cost: Optional[float] = Field(None, ge=0)
+    odometer: Optional[float] = Field(None, ge=0)
+    date: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class MaintenanceLogResponse(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    vehicle_id: UUID
+    vehicle_registration: Optional[str] = None
+    type: MaintenanceType
+    cost: float
+    odometer: float
+    date: datetime
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+

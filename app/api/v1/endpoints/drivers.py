@@ -4,7 +4,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import TokenPayload, get_current_user
+from app.core.security import TokenPayload, get_current_user, require_role
 from app.models.models import Driver, Vehicle
 from app.schemas.schemas import DriverCreate, DriverResponse, DriverUpdate
 
@@ -16,7 +16,11 @@ async def list_drivers(current_user: TokenPayload = Depends(get_current_user), d
     return result.scalars().all()
 
 @router.post("/", response_model=DriverResponse, status_code=201)
-async def create_driver(data: DriverCreate, current_user: TokenPayload = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def create_driver(
+    data: DriverCreate,
+    current_user: TokenPayload = Depends(require_role("admin", "super_admin", "dispatcher")),
+    db: AsyncSession = Depends(get_db),
+):
     payload = data.model_dump(exclude_none=True)
 
     # Pydantic parses these into uuid.UUID, but the columns are
@@ -53,7 +57,12 @@ async def get_driver(driver_id: str, current_user: TokenPayload = Depends(get_cu
     return driver
 
 @router.patch("/{driver_id}", response_model=DriverResponse)
-async def update_driver(driver_id: str, data: DriverUpdate, current_user: TokenPayload = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def update_driver(
+    driver_id: str,
+    data: DriverUpdate,
+    current_user: TokenPayload = Depends(require_role("admin", "super_admin", "dispatcher")),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Driver).where(and_(Driver.id == driver_id, Driver.tenant_id == current_user.tenant_id)))
     driver = result.scalar_one_or_none()
     if not driver:
@@ -66,7 +75,11 @@ async def update_driver(driver_id: str, data: DriverUpdate, current_user: TokenP
     return driver
 
 @router.delete("/{driver_id}", status_code=204)
-async def deactivate_driver(driver_id: str, current_user: TokenPayload = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def deactivate_driver(
+    driver_id: str,
+    current_user: TokenPayload = Depends(require_role("admin", "super_admin", "dispatcher")),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Driver).where(and_(Driver.id == driver_id, Driver.tenant_id == current_user.tenant_id)))
     driver = result.scalar_one_or_none()
     if not driver:

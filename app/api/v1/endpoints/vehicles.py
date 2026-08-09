@@ -2,14 +2,16 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import TokenPayload, get_current_user
+from app.core.security import TokenPayload, get_current_user, require_role
 from app.models.models import (
     AIR_VEHICLE_TYPES,
+    Driver,
     TransportMode,
+    UserRole,
     Vehicle,
     VehicleType,
     mode_for_vehicle_type,
@@ -26,6 +28,18 @@ async def list_vehicles(
     db: AsyncSession = Depends(get_db),
 ):
     query = select(Vehicle).where(Vehicle.tenant_id == current_user.tenant_id)
+    if current_user.role == UserRole.DRIVER or current_user.role == "driver":
+        d_res = await db.execute(
+            select(Driver).where(
+                Driver.tenant_id == current_user.tenant_id,
+                or_(Driver.user_id == current_user.user_id, Driver.email == current_user.email),
+            )
+        )
+        driver = d_res.scalar_one_or_none()
+        if not driver or not driver.vehicle_id:
+            return []
+        query = query.where(Vehicle.id == driver.vehicle_id)
+
     if transport_mode:
         query = query.where(Vehicle.transport_mode == transport_mode)
     if vehicle_type:
@@ -34,7 +48,11 @@ async def list_vehicles(
     return result.scalars().all()
 
 @router.post("/", response_model=VehicleResponse, status_code=201)
-async def create_vehicle(data: VehicleCreate, current_user: TokenPayload = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def create_vehicle(
+    data: VehicleCreate,
+    current_user: TokenPayload = Depends(require_role("admin", "super_admin", "dispatcher")),
+    db: AsyncSession = Depends(get_db),
+):
     payload = data.model_dump(exclude_none=True)
     # The asset itself decides its mode — a freighter is always an air unit.
     payload["transport_mode"] = mode_for_vehicle_type(data.vehicle_type)
@@ -61,7 +79,12 @@ async def get_vehicle(vehicle_id: str, current_user: TokenPayload = Depends(get_
     return vehicle
 
 @router.patch("/{vehicle_id}", response_model=VehicleResponse)
-async def update_vehicle(vehicle_id: str, data: VehicleUpdate, current_user: TokenPayload = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def update_vehicle(
+    vehicle_id: str,
+    data: VehicleUpdate,
+    current_user: TokenPayload = Depends(require_role("admin", "super_admin", "dispatcher")),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Vehicle).where(and_(Vehicle.id == vehicle_id, Vehicle.tenant_id == current_user.tenant_id)))
     vehicle = result.scalar_one_or_none()
     if not vehicle:

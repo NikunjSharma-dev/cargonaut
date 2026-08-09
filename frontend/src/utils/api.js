@@ -82,12 +82,8 @@ export async function apiFetch(path, options = {}) {
   const cleanPath = path.startsWith('/api/v1') ? path.replace('/api/v1', '') : path
   const method = (options.method || 'GET').toLowerCase()
   const data = options.body ? (typeof options.body === 'string' ? JSON.parse(options.body) : options.body) : undefined
-  try {
-    const res = await api({ url: cleanPath, method, data })
-    return res.data
-  } catch (_) {
-    return {}
-  }
+  const res = await api({ url: cleanPath, method, data })
+  return res.data
 }
 
 export default api

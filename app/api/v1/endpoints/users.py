@@ -4,7 +4,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import TokenPayload, get_current_user, get_password_hash
+from app.core.security import TokenPayload, get_password_hash, require_role
 from app.models.models import User
 from app.schemas.schemas import UserCreate, UserResponse, UserUpdate
 
@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("/", response_model=list[UserResponse])
 async def list_users(
-    current_user: TokenPayload = Depends(get_current_user),
+    current_user: TokenPayload = Depends(require_role("admin", "super_admin", "dispatcher")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -24,7 +24,7 @@ async def list_users(
 @router.post("/", response_model=UserResponse, status_code=201)
 async def create_user(
     data: UserCreate,
-    current_user: TokenPayload = Depends(get_current_user),
+    current_user: TokenPayload = Depends(require_role("admin", "super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
     user = User(
@@ -45,7 +45,7 @@ async def create_user(
 async def update_user(
     user_id: str,
     data: UserUpdate,
-    current_user: TokenPayload = Depends(get_current_user),
+    current_user: TokenPayload = Depends(require_role("admin", "super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

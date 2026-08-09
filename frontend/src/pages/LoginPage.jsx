@@ -1,15 +1,28 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { Truck, Eye, EyeOff, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react'
+import { Truck, Eye, EyeOff, ArrowRight, ShieldCheck, CheckCircle2, Sparkles } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { login, register } = useAuthStore()
+  const { login, register, guestLogin } = useAuthStore()
   const [mode, setMode] = useState('login')
   const [loading, setLoading] = useState(false)
   const [showPwd, setShowPwd] = useState(false)
+
+  async function handleGuestAccess() {
+    setLoading(true)
+    try {
+      await guestLogin()
+      toast.success('Signed in as Guest Operator (Public Demo Mode)')
+      navigate('/dashboard')
+    } catch (_) {
+      toast.error('Guest access failed')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const [form, setForm] = useState({
     email: '',
@@ -200,15 +213,28 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-xs text-muted text-center pt-2 border-t border-app-border">
-            {mode === 'login' ? "Don't have an account? " : 'Already registered? '}
+          <div className="pt-2 border-t border-app-border space-y-3">
             <button
-              className="text-primary font-bold hover:underline ml-1"
-              onClick={() => setMode(m => m === 'login' ? 'register' : 'login')}
+              type="button"
+              onClick={handleGuestAccess}
+              disabled={loading}
+              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition-all"
             >
-              {mode === 'login' ? 'Create workspace' : 'Sign in'}
+              <Sparkles size={16} className="text-amber-300 animate-pulse" />
+              Explore Demo (One-Click Guest Access)
             </button>
-          </p>
+
+            <p className="text-xs text-muted text-center">
+              {mode === 'login' ? "Don't have an account? " : 'Already registered? '}
+              <button
+                type="button"
+                className="text-primary font-bold hover:underline ml-1"
+                onClick={() => setMode(m => m === 'login' ? 'register' : 'login')}
+              >
+                {mode === 'login' ? 'Create workspace' : 'Sign in'}
+              </button>
+            </p>
+          </div>
 
           {mode === 'login' && (
             <div className="p-3 rounded-xl bg-app-panel border border-app-border text-xs">

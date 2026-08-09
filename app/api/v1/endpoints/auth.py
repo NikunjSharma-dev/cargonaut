@@ -117,3 +117,44 @@ async def get_me(
         "role": user.role.value,
         "is_active": user.is_active,
     }
+
+
+@router.post("/guest", response_model=TokenResponse)
+async def guest_login(db: AsyncSession = Depends(get_db)):
+    """One-click guest login for public demo mode."""
+    res = await db.execute(select(Tenant).where(Tenant.slug == "cargonaut-demo"))
+    tenant = res.scalar_one_or_none()
+    if not tenant:
+        tenant = Tenant(name="Cargonaut Demo Fleet", slug="cargonaut-demo", plan="enterprise")
+        db.add(tenant)
+        await db.flush()
+
+    u_res = await db.execute(select(User).where(User.email == "guest@cargonaut.io"))
+    user = u_res.scalar_one_or_none()
+    if not user:
+        user = User(
+            tenant_id=tenant.id,
+            email="guest@cargonaut.io",
+            hashed_password=get_password_hash("guestpass123"),
+            full_name="Guest Operator",
+            role=UserRole.VIEWER,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    token = create_access_token(
+        user_id=str(user.id),
+        tenant_id=str(tenant.id),
+        email=user.email,
+        role=user.role.value,
+    )
+    return TokenResponse(
+        access_token=token,
+        user_id=str(user.id),
+        tenant_id=str(tenant.id),
+        email=user.email,
+        role=user.role.value,
+        full_name=user.full_name,
+    )
+
