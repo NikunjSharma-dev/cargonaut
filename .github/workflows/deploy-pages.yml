@@ -40,6 +40,10 @@ jobs:
         env:
           # Project pages are served from https://<user>.github.io/<repo>/
           VITE_BASE: /${{ github.event.repository.name }}/
+          # Public Mapbox token for the route-replay basemap. It is inlined into
+          # the bundle, so restrict it by URL in the Mapbox account. If the
+          # secret is unset the map pane renders a "Map unavailable" panel.
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
         run: npm run build
 
       - name: Add SPA fallback

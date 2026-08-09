@@ -14,12 +14,11 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^13.0.0",
-    "leaflet": "^1.9.4",
     "lucide-react": "^0.465.0",
+    "mapbox-gl": "^3.28.1",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-hot-toast": "^2.4.1",
-    "react-leaflet": "^4.2.1",
     "react-router-dom": "^6.28.0",
     "recharts": "^2.13.3",
     "zustand": "^5.0.2"

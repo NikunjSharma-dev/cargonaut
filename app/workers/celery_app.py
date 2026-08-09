@@ -27,5 +27,14 @@ celery_app.conf.update(
         "app.workers.tasks.run_vrp_optimization": {"queue": "optimization"},
         "app.workers.tasks.run_power_bi_etl": {"queue": "etl"},
         "app.workers.tasks.flush_gps_buffer": {"queue": "telemetry"},
+        "app.workers.tasks.sweep_geofences": {"queue": "telemetry"},
+    },
+    # Safety net only — enter/exit events fire inline on ping ingest.
+    beat_schedule={
+        "geofence-sweep": {
+            "task": "app.workers.tasks.sweep_geofences",
+            "schedule": 600.0,   # every 10 minutes
+            "kwargs": {"lookback_minutes": 15},
+        },
     },
 )

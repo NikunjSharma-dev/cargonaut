@@ -5,42 +5,32 @@ import {
   Plane, Gauge,
 } from 'lucide-react'
 import api from '../utils/api'
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
 import clsx from 'clsx'
 import VehicleGraphic from '../components/VehicleGraphic'
+import RouteReplayMap from '../components/RouteReplayMap'
+import RouteScrubber from '../components/RouteScrubber'
 import {
   MODE_LIST, modeMeta, cargoMeta, chargeableWeightKg, isVolumetric,
 } from '../utils/cargo'
 
-const truckIcon = new L.DivIcon({
-  className: '',
-  html: `<div class="map-marker-truck" style="background:#e8606d;width:34px;height:34px;border-radius:50%;border:4px solid #fff;display:flex;align-items:center;justify-content:center;">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
-  </div>`,
-  iconSize: [34, 34],
-  iconAnchor: [17, 17],
-})
-
-// Air units get their own marker so a mixed map stays readable at a glance
-const planeIcon = new L.DivIcon({
-  className: '',
-  html: `<div class="map-marker-plane" style="background:#3b82f6;width:34px;height:34px;border-radius:50%;border:4px solid #fff;display:flex;align-items:center;justify-content:center;">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
-  </div>`,
-  iconSize: [34, 34],
-  iconAnchor: [17, 17],
-})
-
-const stopIcon = new L.DivIcon({
-  className: '',
-  html: `<div style="background:#fff;width:24px;height:24px;border-radius:50%;border:2px solid #e8606d;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(24,26,33,.18);">
-    <span style="width:8px;height:8px;border-radius:50%;background:#e8606d;display:block"></span>
-  </div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-})
+/**
+ * Normalise a demo card's static routePath into the same point shape the
+ * tracking API returns, so the replay control has one input format.
+ * Timestamps are spaced evenly backwards from now purely to give the scrubber
+ * a readable clock — demo cards carry no real telemetry.
+ */
+function pathToPoints(routePath = [], minutesApart = 12) {
+  const end = Date.now()
+  const step = minutesApart * 60_000
+  const origin = end - step * Math.max(routePath.length - 1, 0)
+  return routePath.map(([latitude, longitude], i) => ({
+    latitude,
+    longitude,
+    speed_kmh: null,
+    heading: null,
+    timestamp: new Date(origin + i * step).toISOString(),
+  }))
+}
 
 const FLEET = [
   {
@@ -345,6 +335,47 @@ export default function TrackingPage() {
 
   const selected = FLEET.find(v => v.id === selectedId) || visibleFleet[0] || FLEET[0]
   const isAir = selected.mode === 'air'
+
+  // ── Route replay ───────────────────────────────────────────────────────────
+  // A fleet card matches a registered vehicle by registration number; when it
+  // does, the breadcrumb comes from the tracking API. Demo-only cards fall back
+  // to their static routePath so the replay control still has something to run.
+  const { data: vehicles, isError: vehiclesFailed } = useQuery({
+    queryKey: ['vehicles'],
+    queryFn: () => api.get('/vehicles/').then(r => r.data),
+    retry: false,
+  })
+
+  const liveVehicleId = useMemo(
+    () => vehicles?.find(v => v.registration_number === selected.id)?.id ?? null,
+    [vehicles, selected.id],
+  )
+
+  const { data: track, isLoading: trackLoading } = useQuery({
+    queryKey: ['vehicle-track', liveVehicleId],
+    queryFn: () => api.get(`/tracking/vehicles/${liveVehicleId}/history`).then(r => r.data),
+    enabled: Boolean(liveVehicleId),
+    retry: false,
+  })
+
+  const replayPoints = useMemo(
+    () => (track?.points?.length ? track.points : pathToPoints(selected.routePath)),
+    [track, selected.routePath],
+  )
+  const replayIsLive = Boolean(track?.points?.length)
+
+  const [cursor, setCursor] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [replaySpeed, setReplaySpeed] = useState(1)
+
+  // A new trail opens fully drawn with the head on the newest fix — this is a
+  // live tracking screen, so the default view is "where is it now", not the
+  // start of yesterday. Pressing play rewinds and replays from the beginning.
+  useEffect(() => {
+    setPlaying(false)
+    setCursor(Math.max(replayPoints.length - 1, 0))
+  }, [replayPoints])
+
   const selectedCargo = cargoMeta(selected.cargoType)
   const chargeable = chargeableWeightKg(selected.loadKg, selected.volumeM3, selected.mode)
   const billedOnVolume = isVolumetric(selected.loadKg, selected.volumeM3, selected.mode)
@@ -604,36 +635,16 @@ export default function TrackingPage() {
                 )}
 
                 <div className="relative h-[340px] rounded-2xl overflow-hidden border border-app-border">
-                  <MapContainer
-                    key={selected.id}
-                    center={selected.currentLoc}
-                    zoom={isAir ? 6 : 12}
-                    scrollWheelZoom={false}
-                    zoomControl={false}
-                    className="w-full h-full"
-                  >
-                    <TileLayer
-                      attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-                      url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                  {trackLoading ? (
+                    <div className="w-full h-full bg-app-panel animate-pulse" aria-label="Loading route" />
+                  ) : (
+                    <RouteReplayMap
+                      points={replayPoints}
+                      cursor={cursor}
+                      isAir={isAir}
+                      className="w-full h-full"
                     />
-                    <Polyline
-                      positions={selected.routePath}
-                      pathOptions={
-                        isAir
-                          // Air legs are a planned track, not a road — dashed reads as such
-                          ? { color: '#3b82f6', weight: 3, opacity: 0.9, dashArray: '7 7' }
-                          : { color: '#e8606d', weight: 4, opacity: 0.9 }
-                      }
-                    />
-                    {[selected.routePath[0], selected.routePath[selected.routePath.length - 1]].map((pos, i) => (
-                      <Marker key={i} position={pos} icon={stopIcon} />
-                    ))}
-                    <Marker position={selected.currentLoc} icon={isAir ? planeIcon : truckIcon}>
-                      <Popup>
-                        <span className="text-xs font-semibold">{selected.id} — live position</span>
-                      </Popup>
-                    </Marker>
-                  </MapContainer>
+                  )}
 
                   {/* Floating map controls */}
                   <div className="absolute top-3 right-3 z-[400] flex flex-col gap-2">
@@ -647,6 +658,33 @@ export default function TrackingPage() {
                     ))}
                   </div>
                 </div>
+
+                <RouteScrubber
+                  points={replayPoints}
+                  cursor={cursor}
+                  onCursor={setCursor}
+                  playing={playing}
+                  onPlaying={setPlaying}
+                  speed={replaySpeed}
+                  onSpeed={setReplaySpeed}
+                />
+
+                {!replayIsLive && (
+                  <p className="text-[11px] text-muted">
+                    Replaying this card&apos;s planned path —{' '}
+                    {vehiclesFailed
+                      ? 'could not reach the API to look up telemetry.'
+                      : liveVehicleId
+                        ? <>no GPS pings recorded for <span className="font-mono">{selected.id}</span> in the last 24 hours.</>
+                        : <><span className="font-mono">{selected.id}</span> is not a registered vehicle.</>}
+                  </p>
+                )}
+                {track?.truncated && (
+                  <p className="text-[11px] text-muted">
+                    Trail clipped to the most recent {track.point_count.toLocaleString()} pings —
+                    earlier fixes in this window are not shown.
+                  </p>
+                )}
               </section>
 
               {/* Cargo photos */}

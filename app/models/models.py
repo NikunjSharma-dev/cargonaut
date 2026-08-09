@@ -18,6 +18,7 @@ from sqlalchemy import (
     JSON,
     UUID,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Enum,
@@ -129,6 +130,24 @@ class HubType(str, PyEnum):
     PICKUP_POINT        = "pickup_point"
     CROSS_DOCK          = "cross_dock"
     AIR_CARGO_TERMINAL  = "air_cargo_terminal"
+
+
+class GeofenceKind(str, PyEnum):
+    """How the dispatcher drew the fence. Both store a polygon ring."""
+    CIRCLE  = "circle"
+    POLYGON = "polygon"
+
+
+class GeofenceEventType(str, PyEnum):
+    ENTER = "enter"
+    EXIT  = "exit"
+
+
+class ShiftStatus(str, PyEnum):
+    SCHEDULED = "scheduled"
+    ACTIVE    = "active"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
 class FuelType(str, PyEnum):
@@ -406,4 +425,121 @@ class GPSPing(Base):
     __table_args__ = (
         Index("ix_gps_pings_driver_ts", "driver_id", "timestamp"),
         Index("ix_gps_pings_tenant_ts", "tenant_id", "timestamp"),
+        # Route replay scans one vehicle's breadcrumb over a time window
+        Index("ix_gps_pings_vehicle_ts", "vehicle_id", "timestamp"),
+    )
+
+
+# ─── Shift ────────────────────────────────────────────────────────────────────
+
+class Shift(Base):
+    """
+    A driver rostered to work a window, optionally in a specific vehicle.
+
+    `Driver.shift_start` / `shift_end` are the driver's recurring daily pattern
+    ("normally works 08:00–18:00"). A Shift is a dated assignment on the roster.
+    The two describe different things and are intentionally kept apart.
+
+    Windows are half-open — [starts_at, ends_at) — so a shift ending at 18:00
+    and the next starting at 18:00 are a clean handover, not an overlap.
+    """
+    __tablename__ = "shifts"
+
+    id         = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id  = Column(UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    driver_id  = Column(UUID(as_uuid=False), ForeignKey("drivers.id",  ondelete="CASCADE"), nullable=False, index=True)
+    vehicle_id = Column(UUID(as_uuid=False), ForeignKey("vehicles.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    starts_at  = Column(DateTime(timezone=True), nullable=False)
+    ends_at    = Column(DateTime(timezone=True), nullable=False)
+    status     = Column(Enum(ShiftStatus), nullable=False, default=ShiftStatus.SCHEDULED)
+    notes      = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    driver  = relationship("Driver")
+    vehicle = relationship("Vehicle")
+
+    __table_args__ = (
+        # Roster reads are "this tenant, this week"
+        Index("ix_shifts_tenant_start", "tenant_id", "starts_at"),
+        # Double-booking checks scan one driver's / one vehicle's window
+        Index("ix_shifts_driver_window", "driver_id", "starts_at", "ends_at"),
+        Index("ix_shifts_vehicle_window", "vehicle_id", "starts_at", "ends_at"),
+        CheckConstraint("ends_at > starts_at", name="ck_shifts_window_ordered"),
+    )
+
+
+# ─── Geofence ─────────────────────────────────────────────────────────────────
+
+class Geofence(Base):
+    """
+    A named zone a vehicle can be inside or outside of.
+
+    `area` and `boundary` hold the same closed ring: `area` for PostGIS
+    ST_Contains and the spatial index, `boundary` as plain JSON for the map and
+    for containment where PostGIS is absent. They are only ever written together
+    through app.services.geofencing, so they cannot drift.
+    """
+    __tablename__ = "geofences"
+
+    id         = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id  = Column(UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    hub_id     = Column(UUID(as_uuid=False), ForeignKey("hubs.id", ondelete="SET NULL"), nullable=True)
+
+    name       = Column(String(200), nullable=False)
+    kind       = Column(Enum(GeofenceKind), nullable=False, default=GeofenceKind.CIRCLE)
+    area       = Column(Geometry(geometry_type="POLYGON", srid=4326, spatial_index=False), nullable=True)
+    boundary   = Column(JSONB, nullable=False, default=lambda: [])
+
+    # Circle fences keep their source parameters so the UI can re-edit them as a
+    # circle instead of handing the dispatcher back 48 polygon vertices.
+    centre_latitude  = Column(Float, nullable=True)
+    centre_longitude = Column(Float, nullable=True)
+    radius_m         = Column(Float, nullable=True)
+
+    # Which transitions raise an alert. A depot may only care about arrivals.
+    alert_on_enter = Column(Boolean, nullable=False, default=True)
+    alert_on_exit  = Column(Boolean, nullable=False, default=True)
+    is_active      = Column(Boolean, nullable=False, default=True)
+    colour         = Column(String(9), nullable=True)   # #RRGGBB or #RRGGBBAA
+    notes          = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    events = relationship("GeofenceEvent", back_populates="geofence", lazy="dynamic")
+
+    __table_args__ = (
+        Index("ix_geofences_tenant_active", "tenant_id", "is_active"),
+    )
+
+
+class GeofenceEvent(Base):
+    """A vehicle crossing a fence boundary. Transitions only, never per-ping."""
+    __tablename__ = "geofence_events"
+
+    id          = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id   = Column(UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    geofence_id = Column(UUID(as_uuid=False), ForeignKey("geofences.id", ondelete="CASCADE"), nullable=False, index=True)
+    vehicle_id  = Column(UUID(as_uuid=False), ForeignKey("vehicles.id", ondelete="CASCADE"), nullable=True)
+    driver_id   = Column(UUID(as_uuid=False), ForeignKey("drivers.id",  ondelete="SET NULL"), nullable=True)
+
+    event_type  = Column(Enum(GeofenceEventType), nullable=False)
+    # Every transition is stored so occupancy can be reconstructed; this marks
+    # the ones the fence actually wants surfaced as an alert.
+    is_alert    = Column(Boolean, nullable=False, default=True)
+    latitude    = Column(Float, nullable=False)
+    longitude   = Column(Float, nullable=False)
+    occurred_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+
+    geofence = relationship("Geofence", back_populates="events")
+
+    __table_args__ = (
+        # The alert feed reads "newest events for this tenant"
+        Index("ix_geofence_events_tenant_ts", "tenant_id", "occurred_at"),
+        # Occupancy lookup: latest state per (vehicle, fence)
+        Index("ix_geofence_events_vehicle_fence", "vehicle_id", "geofence_id", "occurred_at"),
     )

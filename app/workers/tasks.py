@@ -137,3 +137,117 @@ def check_sla_deadlines() -> Dict:
     # In production: query orders WHERE sla_deadline < NOW() + INTERVAL '1 hour'
     # and push alerts via webhook / email
     return {"status": "ok"}
+
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.tasks.sweep_geofences",
+    max_retries=1,
+    soft_time_limit=300,
+)
+def sweep_geofences(self, lookback_minutes: int = 15, max_pings: int = 20_000) -> Dict:
+    """
+    Safety-net pass over recent GPS pings.
+
+    Enter/exit events are normally raised inline by POST /tracking/ping, which
+    is instant and has no polling lag. This sweep exists only for positions that
+    path never accounted for: pings written while a fence was being edited,
+    backfilled by an importer, or lost to a crash between insert and commit.
+
+    Two rules keep it from inventing events:
+
+      * Only pings NEWER than a vehicle's most recent transition are replayed.
+        Occupancy is reconstructed from the newest event, so feeding it an older
+        position would compare a stale fix against newer state and emit a
+        transition that never happened — and because that bogus event carries an
+        older timestamp, it would not even correct the state, so every
+        subsequent ping in the window would emit another one.
+      * Pings are replayed per vehicle in chronological order, because occupancy
+        is a state machine and out-of-order positions fabricate crossings.
+    """
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import and_, select
+
+    from app.core.database import AsyncSessionLocal
+    from app.models.models import GPSPing
+    from app.services.geofence_detection import evaluate_position, latest_event_time
+
+    async def _run() -> Dict:
+        since = datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+        checked = 0
+        skipped = 0
+        raised = 0
+
+        async with AsyncSessionLocal() as session:
+            # Which (tenant, vehicle) pairs even moved in the window
+            pairs = await session.execute(
+                select(GPSPing.tenant_id, GPSPing.vehicle_id)
+                .where(and_(GPSPing.timestamp >= since, GPSPing.vehicle_id.isnot(None)))
+                .group_by(GPSPing.tenant_id, GPSPing.vehicle_id)
+            )
+
+            budget = max_pings
+            for tenant_id, vehicle_id in pairs.all():
+                if budget <= 0:
+                    logger.warning(
+                        f"[GEOFENCE] sweep hit the {max_pings}-ping budget; "
+                        "remaining vehicles deferred to the next run"
+                    )
+                    break
+
+                # Everything up to the last recorded transition is already known
+                watermark = await latest_event_time(session, tenant_id, vehicle_id)
+                query = select(GPSPing).where(
+                    and_(
+                        GPSPing.tenant_id == tenant_id,
+                        GPSPing.vehicle_id == vehicle_id,
+                        GPSPing.timestamp >= since,
+                    )
+                )
+                if watermark is not None:
+                    query = query.where(GPSPing.timestamp > watermark)
+
+                pings = (
+                    await session.execute(
+                        query.order_by(GPSPing.timestamp.asc()).limit(budget)
+                    )
+                ).scalars().all()
+
+                if not pings:
+                    skipped += 1
+                    continue
+
+                for ping in pings:
+                    events = await evaluate_position(
+                        session,
+                        tenant_id=ping.tenant_id,
+                        vehicle_id=ping.vehicle_id,
+                        driver_id=ping.driver_id,
+                        latitude=ping.latitude,
+                        longitude=ping.longitude,
+                        occurred_at=ping.timestamp,
+                    )
+                    checked += 1
+                    raised += len(events)
+                    if events:
+                        # Commit per transition so the next iteration's occupancy
+                        # read sees it
+                        await session.commit()
+
+                budget -= len(pings)
+
+        return {
+            "pings_checked": checked,
+            "vehicles_up_to_date": skipped,
+            "events_raised": raised,
+            "lookback_minutes": lookback_minutes,
+        }
+
+    logger.info(f"[GEOFENCE] sweep lookback={lookback_minutes}m")
+    try:
+        return asyncio.run(_run())
+    except Exception as exc:
+        logger.error(f"[GEOFENCE] sweep failed: {exc}")
+        raise self.retry(exc=exc, countdown=60) from exc

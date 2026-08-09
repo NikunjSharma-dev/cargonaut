@@ -7,13 +7,16 @@ from decimal import Decimal
 from typing import Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.models.models import (
     CargoType,
     FuelType,
+    GeofenceEventType,
+    GeofenceKind,
     HubType,
     OrderStatus,
+    ShiftStatus,
     TransportMode,
     UserRole,
     VehicleStatus,
@@ -345,6 +348,174 @@ class GPSPingResponse(BaseModel):
     timestamp: datetime
     geofence_triggered: Optional[bool] = False
     triggered_order_id: Optional[UUID] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ─── Route Replay ─────────────────────────────────────────────────────────────
+
+class VehicleTrackPoint(BaseModel):
+    """One breadcrumb on a vehicle's historical trail."""
+    latitude: float
+    longitude: float
+    speed_kmh: Optional[float] = None
+    heading: Optional[float] = None
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VehicleTrackResponse(BaseModel):
+    vehicle_id: UUID
+    registration_number: str
+    start: datetime
+    end: datetime
+    point_count: int
+    distance_km: float
+    # True when `limit` clipped the window — the oldest fixes were dropped, so
+    # the trail starts later than `start` and `distance_km` is a partial total.
+    truncated: bool = False
+    # Ordered oldest → newest, so the scrubber can index straight into it
+    points: List[VehicleTrackPoint]
+
+
+# ─── Shifts ───────────────────────────────────────────────────────────────────
+
+class ShiftCreate(BaseModel):
+    driver_id: UUID
+    vehicle_id: Optional[UUID] = None
+    starts_at: datetime
+    ends_at: datetime
+    status: ShiftStatus = ShiftStatus.SCHEDULED
+    notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_window(self):
+        if self.ends_at <= self.starts_at:
+            raise ValueError("`ends_at` must be later than `starts_at`")
+        return self
+
+
+class ShiftUpdate(BaseModel):
+    driver_id: Optional[UUID] = None
+    vehicle_id: Optional[UUID] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    status: Optional[ShiftStatus] = None
+    notes: Optional[str] = None
+    # Distinguishes "leave the vehicle alone" from "unassign the vehicle",
+    # which a plain None on vehicle_id cannot express.
+    clear_vehicle: bool = False
+
+
+class ShiftResponse(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    driver_id: UUID
+    driver_name: str
+    vehicle_id: Optional[UUID] = None
+    vehicle_registration: Optional[str] = None
+    starts_at: datetime
+    ends_at: datetime
+    status: ShiftStatus
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ─── Geofences ────────────────────────────────────────────────────────────────
+
+class GeofenceBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    alert_on_enter: bool = True
+    alert_on_exit: bool = True
+    is_active: bool = True
+    colour: Optional[str] = Field(None, pattern=r"^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+    notes: Optional[str] = None
+    hub_id: Optional[UUID] = None
+
+
+class GeofenceCreate(GeofenceBase):
+    """
+    Either a circle (centre + radius) or a polygon (boundary ring).
+
+    Both are stored as a polygon ring; the discriminator only decides how the
+    ring is produced and how the UI offers it back for editing.
+    """
+    kind: GeofenceKind = GeofenceKind.CIRCLE
+
+    # Circle
+    centre_latitude: Optional[float] = Field(None, ge=-90, le=90)
+    centre_longitude: Optional[float] = Field(None, ge=-180, le=180)
+    radius_m: Optional[float] = Field(None, gt=0, le=200_000)
+
+    # Polygon — [[lon, lat], ...], GeoJSON order. Open or closed both accepted.
+    boundary: Optional[List[List[float]]] = None
+
+    @model_validator(mode="after")
+    def check_shape(self):
+        if self.kind == GeofenceKind.CIRCLE:
+            missing = [
+                f for f, v in (
+                    ("centre_latitude", self.centre_latitude),
+                    ("centre_longitude", self.centre_longitude),
+                    ("radius_m", self.radius_m),
+                ) if v is None
+            ]
+            if missing:
+                raise ValueError(f"A circle geofence requires: {', '.join(missing)}")
+        elif not self.boundary:
+            raise ValueError("A polygon geofence requires a `boundary` ring")
+        return self
+
+
+class GeofenceUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    alert_on_enter: Optional[bool] = None
+    alert_on_exit: Optional[bool] = None
+    is_active: Optional[bool] = None
+    colour: Optional[str] = Field(None, pattern=r"^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+    notes: Optional[str] = None
+    # Reshaping: supply either a new circle or a new ring, same rules as create
+    centre_latitude: Optional[float] = Field(None, ge=-90, le=90)
+    centre_longitude: Optional[float] = Field(None, ge=-180, le=180)
+    radius_m: Optional[float] = Field(None, gt=0, le=200_000)
+    boundary: Optional[List[List[float]]] = None
+
+
+class GeofenceResponse(GeofenceBase):
+    id: UUID
+    kind: GeofenceKind
+    boundary: List[List[float]]
+    centre_latitude: Optional[float] = None
+    centre_longitude: Optional[float] = None
+    radius_m: Optional[float] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class GeofenceEventResponse(BaseModel):
+    id: UUID
+    geofence_id: UUID
+    geofence_name: str
+    vehicle_id: Optional[UUID] = None
+    vehicle_registration: Optional[str] = None
+    driver_id: Optional[UUID] = None
+    driver_name: Optional[str] = None
+    event_type: GeofenceEventType
+    is_alert: bool
+    latitude: float
+    longitude: float
+    occurred_at: datetime
+    acknowledged_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

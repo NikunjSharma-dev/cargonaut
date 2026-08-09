@@ -8,6 +8,8 @@ import DriversPage from './pages/DriversPage'
 import FleetPage from './pages/FleetPage'
 import HubsPage from './pages/HubsPage'
 import TrackingPage from './pages/TrackingPage'
+import GeofencesPage from './pages/GeofencesPage'
+import ShiftsPage from './pages/ShiftsPage'
 import DispatchPage from './pages/DispatchPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import DriverViewPage from './pages/DriverViewPage'
@@ -36,7 +38,9 @@ export default function App() {
           <Route path="orders"      element={<OrdersPage />} />
           <Route path="dispatch"    element={<DispatchPage />} />
           <Route path="tracking"    element={<TrackingPage />} />
+          <Route path="geofences"   element={<GeofencesPage />} />
           <Route path="drivers"     element={<DriversPage />} />
+          <Route path="shifts"      element={<ShiftsPage />} />
           <Route path="driver-view" element={<DriverViewPage />} />
           <Route path="fleet"       element={<FleetPage />} />
           <Route path="hubs"        element={<HubsPage />} />

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import { useAuthStore } from '../../store/authStore'
+import useGeofenceAlerts from '../../hooks/useGeofenceAlerts'
 import { Modal } from '../ui'
 import { Plus, Search, Package, Truck, User } from 'lucide-react'
 import clsx from 'clsx'
@@ -14,7 +15,9 @@ const PAGE_TITLES = {
   '/orders':      'Orders & Logistics Requests',
   '/dispatch':    'Dispatch Control Center',
   '/tracking':    'Live Fleet Tracking Ops',
+  '/geofences':   'Geofences & Zone Alerts',
   '/drivers':     'Drivers Management',
+  '/shifts':      'Driver Shifts & Scheduling',
   '/driver-view': 'Driver Mobile Terminal',
   '/fleet':       'Fleet Assets & Vehicles',
   '/hubs':        'Hubs & Warehouses',
@@ -25,6 +28,8 @@ const PAGE_TITLES = {
 export default function AppLayout() {
   const location = useLocation()
   const hydrate = useAuthStore(s => s.hydrate)
+  // Zone crossings toast wherever the dispatcher happens to be
+  useGeofenceAlerts()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)

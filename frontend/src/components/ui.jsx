@@ -139,6 +139,10 @@ export function StatusBadge({ status }) {
     failed: 'bg-red-50 text-red-700 border-red-200',
     cancelled: 'bg-app-hover text-body border-app-border',
     draft: 'bg-app-hover text-body border-app-border',
+    // Shift roster states
+    scheduled: 'bg-blue-50 text-blue-700 border-primary/25',
+    active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    completed: 'bg-app-hover text-body border-app-border',
   }
 
   const dotMap = {
@@ -151,6 +155,9 @@ export function StatusBadge({ status }) {
     failed: 'bg-danger',
     cancelled: 'bg-slate-400',
     draft: 'bg-slate-400',
+    scheduled: 'bg-primary',
+    active: 'bg-emerald-500',
+    completed: 'bg-slate-400',
   }
 
   const cls = map[normalized] || 'bg-app-hover text-body border-app-border'

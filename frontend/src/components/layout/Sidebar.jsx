@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutGrid, Package, Truck, Users, UserRound,
-  Navigation, BarChart3, Settings, LogOut,
+  Navigation, BarChart3, Settings, LogOut, Radar,
   Warehouse, X, Plus, ChevronRight, ChevronDown,
-  Bell, Zap, Smartphone, FileBarChart, LineChart,
+  Bell, Zap, Smartphone, FileBarChart, LineChart, CalendarClock,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { initials } from '../../utils/helpers'
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/hubs', icon: Warehouse, label: 'Partners' },
   { to: '/dispatch', icon: Zap, label: 'Dispatch', badge: 7 },
   { to: '/tracking', icon: Navigation, label: 'Tracking' },
+  { to: '/geofences', icon: Radar, label: 'Geofences' },
   {
     key: 'request',
     icon: Bell,
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
       { to: '/fleet', icon: Truck, label: 'Trucks' },
       { to: '/orders', icon: Package, label: 'Cargos', badge: 2 },
       { to: '/drivers', icon: UserRound, label: 'Drivers' },
+      { to: '/shifts', icon: CalendarClock, label: 'Shifts' },
       { to: '/driver-view', icon: Smartphone, label: 'Driver App' },
       { to: '/analytics', icon: FileBarChart, label: 'Reports', badge: 2 },
     ],
