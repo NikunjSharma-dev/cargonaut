@@ -99,6 +99,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [backend-test, frontend-build]
     if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -120,7 +123,9 @@ jobs:
         with:
           context: .
           file: infra/Dockerfile.api
-          push: true
+          # To publish: set Settings > Actions > Workflow permissions to
+          # "Read and write", then flip this to true.
+          push: false
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NS }}/api:latest
 
       - name: Build and push frontend image
@@ -128,7 +133,7 @@ jobs:
         with:
           context: ./frontend
           file: frontend/Dockerfile
-          push: true
+          push: false
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NS }}/frontend:latest
 
   # ─── Deploy to AWS ECS ───────────────────────────────────────────────────────
@@ -136,7 +141,8 @@ jobs:
     name: Deploy to AWS ECS
     runs-on: ubuntu-latest
     needs: docker-build
-    if: github.ref == 'refs/heads/main'
+    # Opt-in: set repository variable DEPLOY_ECS=true once AWS secrets exist
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ECS == 'true'
     environment: production
 
     steps:
