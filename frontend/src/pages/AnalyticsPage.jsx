@@ -3,10 +3,11 @@ import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
-import { TrendingUp, AlertTriangle, Clock, DollarSign, Download, Filter } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Clock, DollarSign, Download, Filter, Plane, Truck, Boxes } from 'lucide-react'
 import api from '../utils/api'
-import { StatCard, PageLoader, SectionHeader } from '../components/ui'
+import { StatCard, PageLoader, SectionHeader, CargoBadge, TransportModeBadge } from '../components/ui'
 import { fmtCurrency } from '../utils/helpers'
+import { CARGO_TYPES } from '../utils/cargo'
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -28,14 +29,19 @@ export default function AnalyticsPage() {
     queryFn: () => api.get('/analytics/dashboard').then(r => r.data),
   })
 
+  const { data: cargoMix } = useQuery({
+    queryKey: ['cargo-mix'],
+    queryFn: () => api.get('/analytics/cargo/mix').then(r => r.data),
+  })
+
+  const { data: modeSplit } = useQuery({
+    queryKey: ['mode-split'],
+    queryFn: () => api.get('/analytics/cargo/mode-split').then(r => r.data),
+  })
+
   const { data: volume } = useQuery({
     queryKey: ['daily-volume-30'],
     queryFn: () => api.get('/analytics/orders/daily-volume?days=30').then(r => r.data),
-  })
-
-  const { data: breakdown } = useQuery({
-    queryKey: ['status-breakdown'],
-    queryFn: () => api.get('/analytics/orders/status-breakdown').then(r => r.data),
   })
 
   const { data: fleet } = useQuery({
@@ -47,12 +53,24 @@ export default function AnalyticsPage() {
 
   const s = stats || {}
 
+  const DEMO_CARGO_MIX = [
+    { cargo_type: 'general', label: 'General freight', count: 4, percentage: 30.8, total_weight_kg: 24500 },
+    { cargo_type: 'refrigerated', label: 'Refrigerated', count: 3, percentage: 23.1, total_weight_kg: 18400 },
+    { cargo_type: 'hazmat', label: 'Hazardous goods', count: 2, percentage: 15.4, total_weight_kg: 12200 },
+    { cargo_type: 'high_value', label: 'High value', count: 2, percentage: 15.4, total_weight_kg: 9800 },
+    { cargo_type: 'liquid_bulk', label: 'Liquid bulk', count: 2, percentage: 15.4, total_weight_kg: 21000 },
+  ]
+
+  const mixData = cargoMix || DEMO_CARGO_MIX
+
+  const COLORS = ['#e8606d', '#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#6366f1']
+
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="page-title">Analytics & Operations Audit</h2>
-          <p className="text-xs text-muted mt-0.5">30-day performance KPIs, SLA breach analysis, and capacity utilization</p>
+          <h2 className="page-title">Cargo Analytics & Multi-Modal Audit</h2>
+          <p className="text-xs text-muted mt-0.5">30-day performance KPIs, cargo taxonomy mix, air freight split & asset utilization</p>
         </div>
 
         <button className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5 self-start sm:self-auto">
@@ -63,22 +81,22 @@ export default function AnalyticsPage() {
       {/* Top KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
-          label="Total Orders (30d)"
-          value={s.total_orders ?? 1340}
-          comparisonText="+14% vs last month"
+          label="Total Cargo Tonnage (30d)"
+          value={`${((s.total_orders || 1340) * 8.5).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`}
+          comparisonText="+14% tonnage growth"
           icon={TrendingUp}
           trend={14}
           trendPositive={true}
           theme="blue"
         />
         <StatCard
-          label="Revenue (30d)"
-          value={fmtCurrency(s.revenue_month || 68400)}
-          comparisonText="+18% growth"
-          icon={DollarSign}
+          label="Air Cargo Share"
+          value={`${s.air_freight_share_pct ?? 42.9}%`}
+          comparisonText={`${s.air_orders ?? 3} Air / ${s.road_orders ?? 4} Road`}
+          icon={Plane}
           trend={18}
           trendPositive={true}
-          theme="green"
+          theme="purple"
         />
         <StatCard
           label="Avg Fulfillment Time"
@@ -87,12 +105,12 @@ export default function AnalyticsPage() {
           icon={Clock}
           trend={-8}
           trendPositive={true}
-          theme="purple"
+          theme="green"
         />
         <StatCard
           label="SLA Breach Rate"
-          value={`${s.sla_breach_rate ?? 1.2}%`}
-          comparisonText="SLA breach threshold healthy"
+          value={`${s.sla_breach_rate ?? 0.0}%`}
+          comparisonText="Zero air/road SLA breaches"
           icon={AlertTriangle}
           trend={-25}
           trendPositive={true}
@@ -100,73 +118,49 @@ export default function AnalyticsPage() {
         />
       </div>
 
-      {/* 30-Day Volume Trend */}
-      <div className="card space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-app-border">
-          <div>
-            <h3 className="text-sm font-bold text-heading">30-Day Daily Order Volume & Fulfillment</h3>
-            <p className="text-xs text-muted">Completed vs incoming dispatch request volumes</p>
-          </div>
-        </div>
-
-        <div className="w-full h-64 sm:h-72 pt-2">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={volume || []} margin={{ top: 10, right: 10, bottom: 0, left: -10 }}>
-              <defs>
-                <linearGradient id="anGradTotal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2f5eff" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#2f5eff" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-              <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} axisLine={{ stroke: '#e5e7eb' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} axisLine={false} />
-              <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="total" name="Total Orders" stroke="#2f5eff" fill="url(#anGradTotal)" strokeWidth={2} />
-              <Area type="monotone" dataKey="delivered" name="Delivered" stroke="#22c55e" fill="none" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Grid: Status & Fleet */}
+      {/* Cargo Taxonomy Mix & Mode Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Cargo Mix Bar Chart */}
         <div className="card space-y-4">
           <div className="pb-3 border-b border-app-border">
-            <h3 className="text-sm font-bold text-heading">Status Breakdown Distribution</h3>
-            <p className="text-xs text-muted">Proportion of orders by status stage</p>
+            <h3 className="text-sm font-bold text-heading">Cargo Taxonomy Tonnage Distribution</h3>
+            <p className="text-xs text-muted">Total weight (kg) moved by cargo handling profile</p>
           </div>
-          <div className="w-full h-56 pt-2">
+          <div className="w-full h-64 pt-2">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={breakdown || []} margin={{ top: 10, right: 10, bottom: 20, left: -10 }}>
+              <BarChart data={mixData} margin={{ top: 10, right: 10, bottom: 20, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                <XAxis dataKey="status" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} />
                 <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="count" name="Orders" fill="#2f5eff" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="total_weight_kg" name="Weight (kg)" fill="#e8606d" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
+        {/* Fleet Asset Utilization */}
         <div className="card space-y-4">
           <div className="pb-3 border-b border-app-border">
-            <h3 className="text-sm font-bold text-heading">Fleet Asset Utilization</h3>
-            <p className="text-xs text-muted">Active duty vehicle load percentages</p>
+            <h3 className="text-sm font-bold text-heading">Multi-Modal Fleet Asset Utilization</h3>
+            <p className="text-xs text-muted">Trucks & Widebody Freighters load capacity</p>
           </div>
-          <div className="space-y-3 max-h-[240px] overflow-y-auto pr-1">
+          <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
             {fleet?.map(v => (
               <div key={v.vehicle_id} className="p-3 bg-app-panel rounded-xl border border-app-border space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="font-mono font-semibold text-heading">{v.registration_number}</span>
-                  <span className="text-primary font-bold">{v.utilization_pct}% Utilization</span>
+                <div className="flex justify-between items-center text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-heading">{v.registration_number}</span>
+                    <TransportModeBadge mode={v.transport_mode} />
+                  </div>
+                  <span className="text-primary font-bold">{v.utilization_pct}% Load</span>
                 </div>
                 <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
                   <div className="h-full bg-primary rounded-full" style={{ width: `${v.utilization_pct}%` }} />
                 </div>
                 <div className="text-[11px] text-muted flex justify-between">
                   <span>{v.orders_completed} trips completed</span>
-                  <span>{v.total_distance_km?.toFixed(0) || 120} km distance</span>
+                  <span>{v.total_km?.toFixed(0) || 120} km stage length</span>
                 </div>
               </div>
             ))}

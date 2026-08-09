@@ -9,7 +9,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models.models import FuelType, HubType, OrderStatus, UserRole, VehicleStatus, VehicleType
+from app.models.models import (
+    CargoType,
+    FuelType,
+    HubType,
+    OrderStatus,
+    TransportMode,
+    UserRole,
+    VehicleStatus,
+    VehicleType,
+)
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -95,6 +104,8 @@ class HubCreate(BaseModel):
     contact_name: Optional[str] = None
     contact_phone: Optional[str] = None
     capacity: Optional[int] = None
+    iata_code: Optional[str] = Field(None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
+    handles_air_cargo: bool = False
 
 class HubUpdate(BaseModel):
     name: Optional[str] = None
@@ -102,6 +113,8 @@ class HubUpdate(BaseModel):
     is_active: Optional[bool] = None
     geofence_radius_meters: Optional[int] = None
     capacity: Optional[int] = None
+    iata_code: Optional[str] = Field(None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
+    handles_air_cargo: Optional[bool] = None
 
 class HubResponse(BaseModel):
     id: UUID
@@ -118,6 +131,8 @@ class HubResponse(BaseModel):
     contact_phone: Optional[str]
     is_active: bool
     capacity: Optional[int]
+    iata_code: Optional[str]
+    handles_air_cargo: bool
     created_at: datetime
 
     class Config:
@@ -135,14 +150,21 @@ class VehicleCreate(BaseModel):
     fuel_type: FuelType = FuelType.DIESEL
     payload_capacity_kg: float = Field(..., gt=0)
     volume_capacity_m3: Optional[float] = None
+    has_refrigeration: bool = False
     fuel_efficiency_km_per_l: Optional[float] = None
     notes: Optional[str] = None
+    # Air assets. `transport_mode` is derived from `vehicle_type` server-side,
+    # so a caller cannot register a freighter as a road unit.
+    tail_number: Optional[str] = Field(None, max_length=12)
+    uld_positions: Optional[int] = Field(None, ge=1, le=60)
+    range_km: Optional[float] = Field(None, gt=0)
 
 class VehicleUpdate(BaseModel):
     status: Optional[VehicleStatus] = None
     odometer_km: Optional[float] = None
     last_maintenance: Optional[datetime] = None
     next_maintenance: Optional[datetime] = None
+    has_refrigeration: Optional[bool] = None
     notes: Optional[str] = None
 
 class VehicleResponse(BaseModel):
@@ -153,11 +175,16 @@ class VehicleResponse(BaseModel):
     model: Optional[str]
     year: Optional[int]
     vehicle_type: VehicleType
+    transport_mode: TransportMode
     fuel_type: FuelType
     payload_capacity_kg: float
     volume_capacity_m3: Optional[float]
+    has_refrigeration: bool
     status: VehicleStatus
     odometer_km: float
+    tail_number: Optional[str]
+    uld_positions: Optional[int]
+    range_km: Optional[float]
     last_maintenance: Optional[datetime]
     next_maintenance: Optional[datetime]
     created_at: datetime
@@ -221,10 +248,16 @@ class OrderCreate(BaseModel):
     delivery_latitude: Optional[float] = None
     delivery_longitude: Optional[float] = None
     description: Optional[str] = None
+    cargo_type: CargoType = CargoType.GENERAL
+    transport_mode: TransportMode = TransportMode.ROAD
     weight_kg: Optional[float] = None
     volume_m3: Optional[float] = None
+    pieces: Optional[int] = Field(None, ge=1)
     fragile: bool = False
     requires_refrigeration: bool = False
+    air_waybill_number: Optional[str] = Field(None, max_length=20)
+    flight_number: Optional[str] = Field(None, max_length=10)
+    hazmat_un_code: Optional[str] = Field(None, max_length=10)
     scheduled_pickup: Optional[datetime] = None
     scheduled_delivery: Optional[datetime] = None
     sla_deadline: Optional[datetime] = None
@@ -240,6 +273,10 @@ class OrderUpdate(BaseModel):
     status: Optional[OrderStatus] = None
     driver_id: Optional[UUID] = None
     vehicle_id: Optional[UUID] = None
+    cargo_type: Optional[CargoType] = None
+    transport_mode: Optional[TransportMode] = None
+    air_waybill_number: Optional[str] = Field(None, max_length=20)
+    flight_number: Optional[str] = Field(None, max_length=10)
     notes: Optional[str] = None
     actual_pickup: Optional[datetime] = None
     actual_delivery: Optional[datetime] = None
@@ -256,9 +293,18 @@ class OrderResponse(BaseModel):
     delivery_city: str
     delivery_latitude: Optional[float]
     delivery_longitude: Optional[float]
+    cargo_type: CargoType
+    transport_mode: TransportMode
     weight_kg: Optional[float]
+    volume_m3: Optional[float]
+    pieces: Optional[int]
+    # Computed on the ORM model — the greater of actual and volumetric weight
+    chargeable_weight_kg: Optional[float] = None
     fragile: bool
     requires_refrigeration: bool
+    air_waybill_number: Optional[str]
+    flight_number: Optional[str]
+    hazmat_un_code: Optional[str]
     scheduled_delivery: Optional[datetime]
     actual_delivery: Optional[datetime]
     sla_deadline: Optional[datetime]
@@ -310,16 +356,26 @@ class DispatchOptimizeRequest(BaseModel):
     order_ids: List[UUID]
     driver_ids: Optional[List[UUID]] = None  # None = use all available
     optimization_mode: str = Field(default="distance", pattern=r"^(distance|time|cost)$")
+    # None = plan road and air shipments together, each under its own rules
+    transport_mode: Optional[TransportMode] = None
     max_orders_per_driver: int = Field(default=20, ge=1, le=100)
     respect_capacity: bool = True
 
 class DispatchResult(BaseModel):
     driver_id: UUID
     driver_name: str
+    transport_mode: TransportMode
     assigned_order_ids: List[UUID]
     estimated_distance_km: float
     estimated_duration_minutes: int
+    estimated_cost: float
     route_sequence: List[int]
+
+class UnassignedOrder(BaseModel):
+    """An order the optimizer could not place, and why."""
+    order_id: UUID
+    order_number: str
+    reason: str
 
 class DispatchOptimizeResponse(BaseModel):
     task_id: str
@@ -327,6 +383,7 @@ class DispatchOptimizeResponse(BaseModel):
     assignments: List[DispatchResult]
     total_orders: int
     unassigned_order_ids: List[UUID]
+    unassigned: List[UnassignedOrder] = []
     optimization_time_ms: float
 
 
@@ -346,6 +403,27 @@ class DashboardStats(BaseModel):
     avg_delivery_time_hours: float
     revenue_today: float
     revenue_month: float
+    road_orders: int = 0
+    air_orders: int = 0
+    air_freight_share_pct: float = 0.0
+    air_capable_vehicles: int = 0
+
+
+class CargoMixItem(BaseModel):
+    cargo_type: str
+    label: str
+    count: int
+    percentage: float
+    total_weight_kg: float
+
+
+class TransportModeBreakdown(BaseModel):
+    transport_mode: str
+    label: str
+    orders: int
+    percentage: float
+    total_weight_kg: float
+    vehicles: int
 
 
 class FleetUtilizationItem(BaseModel):

@@ -2,18 +2,32 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Search, Phone, MessageSquare, Pencil, Camera, Maximize2, MapPin, Truck as TruckIcon,
+  Plane, Gauge,
 } from 'lucide-react'
 import api from '../utils/api'
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import clsx from 'clsx'
-import TruckGraphic from '../components/TruckGraphic'
+import VehicleGraphic from '../components/VehicleGraphic'
+import {
+  MODE_LIST, modeMeta, cargoMeta, chargeableWeightKg, isVolumetric,
+} from '../utils/cargo'
 
 const truckIcon = new L.DivIcon({
   className: '',
   html: `<div class="map-marker-truck" style="background:#e8606d;width:34px;height:34px;border-radius:50%;border:4px solid #fff;display:flex;align-items:center;justify-content:center;">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+  </div>`,
+  iconSize: [34, 34],
+  iconAnchor: [17, 17],
+})
+
+// Air units get their own marker so a mixed map stays readable at a glance
+const planeIcon = new L.DivIcon({
+  className: '',
+  html: `<div class="map-marker-plane" style="background:#3b82f6;width:34px;height:34px;border-radius:50%;border:4px solid #fff;display:flex;align-items:center;justify-content:center;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
   </div>`,
   iconSize: [34, 34],
   iconAnchor: [17, 17],
@@ -30,73 +44,120 @@ const stopIcon = new L.DivIcon({
 
 const FLEET = [
   {
-    id: 'RE-74ER453TR5', partner: 'Shiphike - For Packages', variant: 'box',
+    id: 'RE-74ER453TR5', partner: 'Shiphike - For Packages', variant: 'box', mode: 'road',
     status: 'on_route', seconds: 9 * 3600 + 47 * 60 + 24, minsLeft: 58,
     driverName: 'Vikram Singh', driverPhone: '+91 98230 11204', depot: 'North Hub Depot',
     type: 'Medium Box Truck (12T)', capacityPct: 74, loadKg: 8900, maxKg: 12000,
+    cargoType: 'parcel', pieces: 640, volumeM3: 26,
     stops: ['475 Broadus', '377 Hammond', '247 Coalwood', '687 Volborg', '874 Beebe'],
     activeStop: 3, currentLoc: [19.076, 72.8777],
     routePath: [[19.02, 72.84], [19.076, 72.8777], [19.12, 72.9], [19.2, 72.97]],
   },
   {
-    id: 'YR-34DFR734W2', partner: 'Roambee', variant: 'semi',
+    id: 'YR-34DFR734W2', partner: 'Roambee', variant: 'semi', mode: 'road',
     status: 'on_route', seconds: 1 * 3600 + 38 * 60 + 47, minsLeft: 57,
     driverName: 'Amit Sharma', driverPhone: '+91 98112 44321', depot: 'Capital Gateway',
     type: 'Heavy Freight Semi (24T)', capacityPct: 82, loadKg: 18400, maxKg: 22000,
+    cargoType: 'palletized', pieces: 38, volumeM3: 61,
     stops: ['074 Rosebud', '159 Thurlow', '357 Hathaway', '854 Sheffield', '712 Miles City'],
     activeStop: 2, currentLoc: [28.6139, 77.209],
     routePath: [[28.55, 77.15], [28.59, 77.18], [28.6139, 77.209], [28.66, 77.25]],
   },
   {
-    id: 'DW-847DE74E4R', partner: 'Post Hawk', variant: 'van',
+    id: 'CG412 · VT-CGN', partner: 'Cargonaut Air', variant: 'freighter', mode: 'air',
+    status: 'on_route', seconds: 2 * 3600 + 12 * 60 + 5, minsLeft: 132,
+    driverName: 'Capt. Neha Iyer', driverPhone: '+91 99204 77311', depot: 'BOM Air Cargo Terminal',
+    type: 'Boeing 777F (112T)', capacityPct: 68, loadKg: 76200, maxKg: 112000,
+    cargoType: 'refrigerated', pieces: 412, volumeM3: 580,
+    tailNumber: 'VT-CGN', flightNumber: 'CG412', awb: '731-40028115',
+    uldUsed: 25, uldTotal: 37, altitudeFt: 34000, groundSpeedKmh: 812,
+    originIata: 'BOM', destIata: 'DEL',
+    stops: ['BOM ramp build-up', 'BOM departure', 'En route FL340', 'DEL arrival', 'DEL breakdown'],
+    activeStop: 2, currentLoc: [23.8, 74.9],
+    routePath: [[19.0896, 72.8656], [21.4, 73.9], [23.8, 74.9], [26.2, 76.0], [28.5562, 77.1]],
+  },
+  {
+    id: 'DW-847DE74E4R', partner: 'Post Hawk', variant: 'van', mode: 'road',
     status: 'on_route', seconds: 1 * 3600 + 38 * 60 + 47, minsLeft: 78,
     driverName: 'Rajesh Kumar', driverPhone: '+91 97401 55902', depot: 'Tech Hub South',
     type: 'Panel Cargo Van (3.5T)', capacityPct: 61, loadKg: 2100, maxKg: 3500,
+    cargoType: 'general', pieces: 96, volumeM3: 11,
     stops: ['874 Sheridan', '589 Ucross', '967 Clearmont', '474 Leiter', '377 Kendrick'],
     activeStop: 1, currentLoc: [12.9716, 77.5946],
     routePath: [[12.93, 77.55], [12.9716, 77.5946], [13.02, 77.63]],
   },
   {
-    id: 'AQ-257DRE141E', partner: 'Loginext', variant: 'van',
+    id: 'CG208 · VT-CGF', partner: 'Cargonaut Air', variant: 'turboprop', mode: 'air',
+    status: 'on_route', seconds: 47 * 60 + 19, minsLeft: 47,
+    driverName: 'Capt. Arjun Menon', driverPhone: '+91 98452 20719', depot: 'BLR Cargo Village',
+    type: 'ATR 72-600F (8.6T)', capacityPct: 91, loadKg: 7800, maxKg: 8600,
+    cargoType: 'high_value', pieces: 6, volumeM3: 1.2,
+    tailNumber: 'VT-CGF', flightNumber: 'CG208', awb: '731-40028116',
+    uldUsed: 6, uldTotal: 6, altitudeFt: 21000, groundSpeedKmh: 486,
+    originIata: 'BLR', destIata: 'BOM',
+    stops: ['BLR build-up', 'BLR departure', 'En route FL210', 'BOM arrival'],
+    activeStop: 2, currentLoc: [16.2, 75.1],
+    routePath: [[13.1986, 77.7066], [15.1, 76.2], [16.2, 75.1], [19.0896, 72.8656]],
+  },
+  {
+    id: 'AQ-257DRE141E', partner: 'Loginext', variant: 'van', mode: 'road',
     status: 'waiting', seconds: 3 * 3600 + 29 * 60 + 58, minsLeft: 29,
     driverName: 'Sunil Patil', driverPhone: '+91 90045 88123', depot: 'West Cargo Yard',
     type: 'Compact Delivery Van (1.5T)', capacityPct: 38, loadKg: 570, maxKg: 1500,
+    cargoType: 'fragile', pieces: 24, volumeM3: 4.5,
     stops: ['125 Kinsey', '654 Saugus', '789 Fallon', '577 Glendive'],
     activeStop: 0, currentLoc: [18.5204, 73.8567],
     routePath: [[18.5204, 73.8567], [18.56, 73.9]],
   },
   {
-    id: 'BG-ER74R6984R', partner: 'Forwardo', variant: 'box',
+    id: 'BG-ER74R6984R', partner: 'Forwardo', variant: 'box', mode: 'road',
     status: 'on_route', seconds: 28 * 60 + 38, minsLeft: 88,
     driverName: 'Manish Rao', driverPhone: '+91 99870 21118', depot: 'North Hub Depot',
     type: 'Medium Box Truck (12T)', capacityPct: 90, loadKg: 10800, maxKg: 12000,
+    cargoType: 'refrigerated', pieces: 210, volumeM3: 30,
     stops: ['369 Cohagen', '258 Hillside', '147 Rock Springs', '268 Angela'],
     activeStop: 3, currentLoc: [23.0225, 72.5714],
     routePath: [[22.98, 72.52], [23.0225, 72.5714], [23.08, 72.63]],
   },
   {
-    id: 'CV-414ER58SER', partner: 'Lopez Pallets', variant: 'semi',
+    id: 'CV-414ER58SER', partner: 'Lopez Pallets', variant: 'semi', mode: 'road',
     status: 'waiting', seconds: 2 * 3600 + 38 * 60 + 47, minsLeft: 18,
     driverName: 'Iqbal Khan', driverPhone: '+91 98765 40021', depot: 'East Terminal',
     type: 'Heavy Freight Semi (24T)', capacityPct: 55, loadKg: 12100, maxKg: 22000,
+    cargoType: 'liquid_bulk', pieces: 1, volumeM3: 24,
     stops: ['536 Dickinson', '469 Belfield', '641 Medora', '279 Wibaux'],
     activeStop: 0, currentLoc: [22.5726, 88.3639],
     routePath: [[22.5726, 88.3639], [22.62, 88.41]],
   },
   {
-    id: 'MN-88TR2091KL', partner: 'Sonosolve', variant: 'box',
+    id: 'CG377 · VT-CGN', partner: 'Cargonaut Air', variant: 'freighter', mode: 'air',
+    status: 'waiting', seconds: 1 * 3600 + 5 * 60 + 12, minsLeft: 65,
+    driverName: 'Capt. Neha Iyer', driverPhone: '+91 99204 77311', depot: 'DEL Air Freight Station',
+    type: 'Boeing 777F (112T)', capacityPct: 34, loadKg: 38100, maxKg: 112000,
+    cargoType: 'hazmat', pieces: 18, volumeM3: 140,
+    tailNumber: 'VT-CGN', flightNumber: 'CG377', awb: '731-40028117', hazmatUnCode: 'UN1263',
+    uldUsed: 13, uldTotal: 37, altitudeFt: 0, groundSpeedKmh: 0,
+    originIata: 'DEL', destIata: 'BLR',
+    stops: ['DEL acceptance', 'DGR check', 'ULD build-up', 'Awaiting slot'],
+    activeStop: 2, currentLoc: [28.5562, 77.1],
+    routePath: [[28.5562, 77.1], [13.1986, 77.7066]],
+  },
+  {
+    id: 'MN-88TR2091KL', partner: 'Sonosolve', variant: 'box', mode: 'road',
     status: 'inactive', seconds: 0, minsLeft: 0,
     driverName: 'Deepak Nair', driverPhone: '+91 90876 33420', depot: 'South Depot',
     type: 'Medium Box Truck (12T)', capacityPct: 0, loadKg: 0, maxKg: 12000,
+    cargoType: 'general', pieces: 0, volumeM3: 0,
     stops: ['902 Ekalaka', '188 Alzada'],
     activeStop: 0, currentLoc: [17.385, 78.4867],
     routePath: [[17.385, 78.4867], [17.42, 78.52]],
   },
   {
-    id: 'PL-63DD1174QW', partner: 'Shiphike - For Packages', variant: 'van',
+    id: 'PL-63DD1174QW', partner: 'Shiphike - For Packages', variant: 'van', mode: 'road',
     status: 'inactive', seconds: 0, minsLeft: 0,
     driverName: 'Farhan Ali', driverPhone: '+91 93456 77210', depot: 'West Cargo Yard',
     type: 'Panel Cargo Van (3.5T)', capacityPct: 0, loadKg: 0, maxKg: 3500,
+    cargoType: 'general', pieces: 0, volumeM3: 0,
     stops: ['411 Broadus', '332 Otter'],
     activeStop: 0, currentLoc: [26.9124, 75.7873],
     routePath: [[26.9124, 75.7873], [26.95, 75.83]],
@@ -111,7 +172,8 @@ const CARGO_PHOTOS = [
 
 const TABS = [
   { key: 'shipping', label: 'Shipping Info' },
-  { key: 'vehicle', label: 'Vehicle Info' },
+  { key: 'cargo', label: 'Cargo' },
+  { key: 'vehicle', label: 'Asset Info' },
   { key: 'docs', label: 'Documents' },
   { key: 'company', label: 'Company' },
   { key: 'billing', label: 'Billing' },
@@ -144,6 +206,30 @@ function StatusDot({ status }) {
       <span className={clsx(on ? 'text-body' : inactive ? 'text-subtle' : 'text-primary')}>
         {on ? 'On Route' : inactive ? 'Inactive' : 'Waiting'}
       </span>
+    </span>
+  )
+}
+
+/** Road / air pill — the first thing a dispatcher needs off a mixed fleet list. */
+export function ModePill({ mode, className = '' }) {
+  const meta = modeMeta(mode)
+  const Icon = meta.icon
+  return (
+    <span className={clsx('mode-pill', meta.tone, className)}>
+      <Icon size={12} strokeWidth={2.4} />
+      {meta.short}
+    </span>
+  )
+}
+
+/** What is in the load, colour-coded by handling class. */
+export function CargoChip({ type, className = '', showIcon = true }) {
+  const meta = cargoMeta(type)
+  const Icon = meta.icon
+  return (
+    <span className={clsx('cargo-chip', meta.tone, className)} title={meta.description}>
+      {showIcon && <Icon size={12} strokeWidth={2.2} />}
+      {meta.label}
     </span>
   )
 }
@@ -190,10 +276,21 @@ function StopsPanel({ vehicle, elapsed }) {
   )
 }
 
+function Field({ label, value }) {
+  return (
+    <div className="bg-app-panel border border-app-border rounded-xl px-4 py-3">
+      <dt className="text-[11px] uppercase tracking-wider text-muted font-semibold">{label}</dt>
+      <dd className="text-[14px] font-semibold text-heading mt-1">{value}</dd>
+    </div>
+  )
+}
+
 export default function TrackingPage() {
   const [partnerFilter, setPartnerFilter] = useState(null)
-  const [showFilter, setShowFilter] = useState('all') // active | inactive | all
-  const [selectedId, setSelectedId] = useState(FLEET[1].id)
+  const [modeFilter, setModeFilter] = useState('all')       // all | road | air
+  const [cargoFilter, setCargoFilter] = useState(null)
+  const [showFilter, setShowFilter] = useState('all')       // active | inactive | all
+  const [selectedId, setSelectedId] = useState(FLEET[2].id)
   const [activeTab, setActiveTab] = useState('shipping')
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -217,6 +314,19 @@ export default function TrackingPage() {
     return [...counts.entries()].map(([name, count]) => ({ name, count }))
   }, [])
 
+  const modeCounts = useMemo(() => ({
+    road: FLEET.filter(v => v.mode === 'road').length,
+    air: FLEET.filter(v => v.mode === 'air').length,
+    all: FLEET.length,
+  }), [])
+
+  // Only offer cargo types the fleet is actually carrying right now
+  const cargoFilters = useMemo(() => {
+    const counts = new Map()
+    FLEET.forEach(v => counts.set(v.cargoType, (counts.get(v.cargoType) || 0) + 1))
+    return [...counts.entries()].map(([key, count]) => ({ key, count, meta: cargoMeta(key) }))
+  }, [])
+
   const showCounts = useMemo(() => ({
     active: FLEET.filter(v => v.status !== 'inactive').length,
     inactive: FLEET.filter(v => v.status === 'inactive').length,
@@ -225,13 +335,19 @@ export default function TrackingPage() {
 
   const visibleFleet = useMemo(() => FLEET.filter(v => {
     if (partnerFilter && v.partner !== partnerFilter) return false
+    if (modeFilter !== 'all' && v.mode !== modeFilter) return false
+    if (cargoFilter && v.cargoType !== cargoFilter) return false
     if (showFilter === 'active' && v.status === 'inactive') return false
     if (showFilter === 'inactive' && v.status !== 'inactive') return false
     if (query && !v.id.toLowerCase().includes(query.toLowerCase())) return false
     return true
-  }), [partnerFilter, showFilter, query])
+  }), [partnerFilter, modeFilter, cargoFilter, showFilter, query])
 
-  const selected = FLEET.find(v => v.id === selectedId) || FLEET[0]
+  const selected = FLEET.find(v => v.id === selectedId) || visibleFleet[0] || FLEET[0]
+  const isAir = selected.mode === 'air'
+  const selectedCargo = cargoMeta(selected.cargoType)
+  const chargeable = chargeableWeightKg(selected.loadKg, selected.volumeM3, selected.mode)
+  const billedOnVolume = isVolumetric(selected.loadKg, selected.volumeM3, selected.mode)
 
   return (
     <div className="flex flex-col lg:flex-row h-full min-h-0 bg-app-panel">
@@ -248,7 +364,7 @@ export default function TrackingPage() {
                   autoFocus
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder="Search vehicle ID..."
+                  placeholder="Search vehicle / flight..."
                   className="input h-9 w-44 text-xs"
                 />
               )}
@@ -259,6 +375,50 @@ export default function TrackingPage() {
               >
                 <Search size={20} />
               </button>
+            </div>
+          </div>
+
+          {/* Transport mode — the primary split of the fleet */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { key: 'all', label: 'All cargo', count: modeCounts.all, icon: null },
+              { key: 'road', label: modeMeta('road').short, count: modeCounts.road, icon: modeMeta('road').icon },
+              { key: 'air', label: modeMeta('air').short, count: modeCounts.air, icon: modeMeta('air').icon },
+            ].map(opt => {
+              const Icon = opt.icon
+              const active = modeFilter === opt.key
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setModeFilter(opt.key)}
+                  className={clsx('mode-tab', active && 'active')}
+                >
+                  {Icon && <Icon size={15} strokeWidth={active ? 2.6 : 2} />}
+                  <span>{opt.label}</span>
+                  <span className="chip-count">{String(opt.count).padStart(2, '0')}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[13px] text-muted font-medium">Cargo type</p>
+            <div className="flex flex-wrap gap-2">
+              {cargoFilters.map(c => {
+                const Icon = c.meta.icon
+                return (
+                  <button
+                    key={c.key}
+                    onClick={() => setCargoFilter(cur => (cur === c.key ? null : c.key))}
+                    className={clsx('chip', cargoFilter === c.key && 'active')}
+                    title={c.meta.description}
+                  >
+                    <Icon size={13} className="flex-shrink-0" />
+                    {c.meta.label}
+                    <span className="chip-count">{String(c.count).padStart(2, '0')}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -322,9 +482,14 @@ export default function TrackingPage() {
                     <StatusDot status={vehicle.status} />
                   </div>
 
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <ModePill mode={vehicle.mode} />
+                    <CargoChip type={vehicle.cargoType} />
+                  </div>
+
                   <StopsPanel vehicle={vehicle} elapsed={elapsed} />
 
-                  <TruckGraphic variant={vehicle.variant} className="w-full max-w-[300px] self-center h-auto mt-1" />
+                  <VehicleGraphic variant={vehicle.variant} className="w-full max-w-[300px] self-center h-auto mt-1" />
                 </button>
               )
             })}
@@ -343,19 +508,21 @@ export default function TrackingPage() {
         {/* Header */}
         <div className="px-6 pt-6 pb-0 flex-shrink-0">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3 justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h2 className="text-[26px] leading-none font-extrabold text-heading font-display tracking-tight">
                 {selected.id}
               </h2>
               <StatusDot status={selected.status} />
+              <ModePill mode={selected.mode} />
+              <CargoChip type={selected.cargoType} />
             </div>
 
             <div className="flex items-center gap-2.5">
               <a href={`tel:${selected.driverPhone.replace(/\s/g, '')}`} className="btn-secondary text-[13px]">
-                <Phone size={16} /> Call Driver
+                <Phone size={16} /> Call {isAir ? 'Crew' : 'Driver'}
               </a>
               <button className="btn-primary text-[13px]">
-                <MessageSquare size={16} /> Chat with Driver
+                <MessageSquare size={16} /> Chat with {isAir ? 'Crew' : 'Driver'}
               </button>
             </div>
           </div>
@@ -384,9 +551,11 @@ export default function TrackingPage() {
             <>
               {/* Capacity */}
               <section className="space-y-3">
-                <h3 className="text-[17px] font-bold text-heading font-display">Current Truck Capacity</h3>
+                <h3 className="text-[17px] font-bold text-heading font-display">
+                  {isAir ? 'Current Main Deck Load' : 'Current Truck Capacity'}
+                </h3>
                 <div className="flex items-center justify-center">
-                  <TruckGraphic
+                  <VehicleGraphic
                     variant={selected.variant}
                     fillPercent={selected.capacityPct}
                     showLabel
@@ -395,29 +564,50 @@ export default function TrackingPage() {
                 </div>
                 <p className="text-[12px] text-muted text-center">
                   {selected.loadKg.toLocaleString()} kg loaded of {selected.maxKg.toLocaleString()} kg capacity
+                  {isAir && selected.uldTotal
+                    ? ` · ${selected.uldUsed} of ${selected.uldTotal} ULD positions built up`
+                    : ''}
                 </p>
               </section>
 
               {/* Route + map */}
               <section className="space-y-3">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-between">
-                  <h3 className="text-[17px] font-bold text-heading font-display">Route</h3>
+                  <h3 className="text-[17px] font-bold text-heading font-display">
+                    {isAir ? `Flight ${selected.flightNumber} · ${selected.originIata} → ${selected.destIata}` : 'Route'}
+                  </h3>
                   <div className="flex items-center gap-4">
                     <span className="font-mono text-[15px] font-semibold text-heading tabular-nums">
                       {formatClock(selected.seconds - elapsed)}
                     </span>
                     <span className="text-[13px] text-muted">{selected.minsLeft} min. left</span>
                     <button className="btn-secondary text-[13px] py-1.5">
-                      <Pencil size={14} /> Change Route
+                      <Pencil size={14} /> {isAir ? 'Change Routing' : 'Change Route'}
                     </button>
                   </div>
                 </div>
+
+                {isAir && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      ['Flight level', selected.altitudeFt ? `FL${Math.round(selected.altitudeFt / 100)}` : 'On ground'],
+                      ['Ground speed', selected.groundSpeedKmh ? `${selected.groundSpeedKmh} km/h` : '—'],
+                      ['Air waybill', selected.awb],
+                      ['ULD positions', `${selected.uldUsed} / ${selected.uldTotal}`],
+                    ].map(([label, value]) => (
+                      <div key={label} className="bg-app-panel border border-app-border rounded-xl px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wider text-muted font-semibold">{label}</p>
+                        <p className="text-[13px] font-semibold text-heading font-mono mt-0.5">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="relative h-[340px] rounded-2xl overflow-hidden border border-app-border">
                   <MapContainer
                     key={selected.id}
                     center={selected.currentLoc}
-                    zoom={12}
+                    zoom={isAir ? 6 : 12}
                     scrollWheelZoom={false}
                     zoomControl={false}
                     className="w-full h-full"
@@ -428,12 +618,17 @@ export default function TrackingPage() {
                     />
                     <Polyline
                       positions={selected.routePath}
-                      pathOptions={{ color: '#e8606d', weight: 4, opacity: 0.9 }}
+                      pathOptions={
+                        isAir
+                          // Air legs are a planned track, not a road — dashed reads as such
+                          ? { color: '#3b82f6', weight: 3, opacity: 0.9, dashArray: '7 7' }
+                          : { color: '#e8606d', weight: 4, opacity: 0.9 }
+                      }
                     />
                     {[selected.routePath[0], selected.routePath[selected.routePath.length - 1]].map((pos, i) => (
                       <Marker key={i} position={pos} icon={stopIcon} />
                     ))}
-                    <Marker position={selected.currentLoc} icon={truckIcon}>
+                    <Marker position={selected.currentLoc} icon={isAir ? planeIcon : truckIcon}>
                       <Popup>
                         <span className="text-xs font-semibold">{selected.id} — live position</span>
                       </Popup>
@@ -442,7 +637,7 @@ export default function TrackingPage() {
 
                   {/* Floating map controls */}
                   <div className="absolute top-3 right-3 z-[400] flex flex-col gap-2">
-                    {[Maximize2, MapPin, TruckIcon].map((Icon, i) => (
+                    {[Maximize2, MapPin, isAir ? Plane : TruckIcon].map((Icon, i) => (
                       <button
                         key={i}
                         className="w-9 h-9 rounded-xl bg-app-surface border border-app-border text-primary flex items-center justify-center shadow-card hover:bg-primary-soft transition-colors"
@@ -487,24 +682,95 @@ export default function TrackingPage() {
             </>
           )}
 
+          {activeTab === 'cargo' && (
+            <section className="space-y-5">
+              <div className="flex flex-wrap items-center gap-3 justify-between">
+                <h3 className="text-[17px] font-bold text-heading font-display">Cargo on board</h3>
+                <CargoChip type={selected.cargoType} />
+              </div>
+
+              <p className="text-[13px] text-body bg-app-panel border border-app-border rounded-xl px-4 py-3">
+                {selectedCargo.description}
+              </p>
+
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Cargo type" value={selectedCargo.label} />
+                <Field label="Transport mode" value={modeMeta(selected.mode).label} />
+                <Field label="Pieces" value={selected.pieces?.toLocaleString() ?? '—'} />
+                <Field label="Gross weight" value={`${selected.loadKg.toLocaleString()} kg`} />
+                <Field label="Volume" value={selected.volumeM3 ? `${selected.volumeM3.toLocaleString()} m³` : '—'} />
+                <Field
+                  label="Chargeable weight"
+                  value={
+                    <span className="flex items-center gap-2">
+                      {chargeable ? `${chargeable.toLocaleString()} kg` : '—'}
+                      {billedOnVolume && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary-soft border border-primary/25 rounded-full px-2 py-0.5">
+                          volumetric
+                        </span>
+                      )}
+                    </span>
+                  }
+                />
+              </dl>
+
+              {/* Handling requirements come straight off the cargo profile */}
+              <div className="space-y-2">
+                <h4 className="text-[13px] font-bold text-heading uppercase tracking-wider">Handling</h4>
+                <ul className="space-y-2">
+                  {[
+                    selectedCargo.needsRefrigeration && 'Temperature-controlled chain — reefer unit or cool ULD required at every leg.',
+                    selectedCargo.requiresDeclaration && 'Shipper declaration required before acceptance.',
+                    selected.hazmatUnCode && `Dangerous goods class ${selected.hazmatUnCode} — segregation rules apply on the deck.`,
+                    !selectedCargo.airAllowed && 'Road only: this cargo class cannot be carried by air.',
+                    selected.cargoType === 'fragile' && 'No stacking. Strapped and dunnaged loads only.',
+                    selected.cargoType === 'high_value' && 'Sealed custody, two-person handover at each transfer.',
+                  ].filter(Boolean).map(rule => (
+                    <li key={rule} className="flex items-start gap-2 text-[13px] text-body">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                      {rule}
+                    </li>
+                  ))}
+                  <li className="flex items-start gap-2 text-[13px] text-body">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                    Rate multiplier {selectedCargo.rateMultiplier.toFixed(2)}× applied to the base {modeMeta(selected.mode).short.toLowerCase()} tariff.
+                  </li>
+                </ul>
+              </div>
+            </section>
+          )}
+
           {activeTab === 'vehicle' && (
             <section className="space-y-4">
-              <h3 className="text-[17px] font-bold text-heading font-display">Vehicle Info</h3>
+              <h3 className="text-[17px] font-bold text-heading font-display">
+                {isAir ? 'Aircraft Info' : 'Vehicle Info'}
+              </h3>
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  ['Vehicle Type', selected.type],
-                  ['Registration', selected.id],
-                  ['Home Depot', selected.depot],
-                  ['Carrier Partner', selected.partner],
-                  ['Max Payload', `${selected.maxKg.toLocaleString()} kg`],
-                  ['Current Load', `${selected.loadKg.toLocaleString()} kg (${selected.capacityPct}%)`],
-                  ['Fuel Level', '78% (Diesel)'],
-                  ['Telemetry Interval', '5 sec'],
-                ].map(([label, value]) => (
-                  <div key={label} className="bg-app-panel border border-app-border rounded-xl px-4 py-3">
-                    <dt className="text-[11px] uppercase tracking-wider text-muted font-semibold">{label}</dt>
-                    <dd className="text-[14px] font-semibold text-heading mt-1">{value}</dd>
-                  </div>
+                {(isAir
+                  ? [
+                    ['Aircraft Type', selected.type],
+                    ['Tail Number', selected.tailNumber],
+                    ['Flight Number', selected.flightNumber],
+                    ['Home Terminal', selected.depot],
+                    ['Carrier Partner', selected.partner],
+                    ['Max Payload', `${selected.maxKg.toLocaleString()} kg`],
+                    ['Current Load', `${selected.loadKg.toLocaleString()} kg (${selected.capacityPct}%)`],
+                    ['ULD Positions', `${selected.uldUsed} of ${selected.uldTotal} built up`],
+                    ['Fuel', 'Jet A-1'],
+                    ['Telemetry Interval', '5 sec (ADS-B)'],
+                  ]
+                  : [
+                    ['Vehicle Type', selected.type],
+                    ['Registration', selected.id],
+                    ['Home Depot', selected.depot],
+                    ['Carrier Partner', selected.partner],
+                    ['Max Payload', `${selected.maxKg.toLocaleString()} kg`],
+                    ['Current Load', `${selected.loadKg.toLocaleString()} kg (${selected.capacityPct}%)`],
+                    ['Fuel Level', '78% (Diesel)'],
+                    ['Telemetry Interval', '5 sec'],
+                  ]
+                ).map(([label, value]) => (
+                  <Field key={label} label={label} value={value} />
                 ))}
               </dl>
             </section>
@@ -514,11 +780,19 @@ export default function TrackingPage() {
             <section className="space-y-4">
               <h3 className="text-[17px] font-bold text-heading font-display">Documents</h3>
               <ul className="space-y-2">
-                {[
-                  `Bill_of_Lading_${selected.id}.pdf`,
-                  'Customs_Clearance_Doc.pdf',
-                  'Insurance_Certificate_2026.pdf',
-                ].map(doc => (
+                {(isAir
+                  ? [
+                    `Air_Waybill_${selected.awb}.pdf`,
+                    'Cargo_Manifest_NOTOC.pdf',
+                    selected.hazmatUnCode ? 'Shippers_Declaration_DGR.pdf' : 'Security_Declaration_CCSF.pdf',
+                    'Customs_Clearance_Doc.pdf',
+                  ]
+                  : [
+                    `Bill_of_Lading_${selected.id}.pdf`,
+                    'Customs_Clearance_Doc.pdf',
+                    'Insurance_Certificate_2026.pdf',
+                  ]
+                ).map(doc => (
                   <li
                     key={doc}
                     className="flex items-center justify-between bg-app-panel border border-app-border rounded-xl px-4 py-3"
@@ -536,9 +810,15 @@ export default function TrackingPage() {
               <h3 className="text-[17px] font-bold text-heading font-display">Company</h3>
               <div className="bg-app-panel border border-app-border rounded-2xl p-5 space-y-2 text-[13px]">
                 <p className="text-[16px] font-bold text-heading font-display">{selected.partner}</p>
-                <p className="text-muted">Assigned driver: <span className="text-heading font-semibold">{selected.driverName}</span></p>
+                <p className="text-muted">
+                  Assigned {isAir ? 'commander' : 'driver'}:{' '}
+                  <span className="text-heading font-semibold">{selected.driverName}</span>
+                </p>
                 <p className="text-muted">Contact: <span className="text-heading font-semibold">{selected.driverPhone}</span></p>
-                <p className="text-muted">Operating depot: <span className="text-heading font-semibold">{selected.depot}</span></p>
+                <p className="text-muted">
+                  Operating {isAir ? 'terminal' : 'depot'}:{' '}
+                  <span className="text-heading font-semibold">{selected.depot}</span>
+                </p>
               </div>
             </section>
           )}
@@ -547,17 +827,29 @@ export default function TrackingPage() {
             <section className="space-y-4">
               <h3 className="text-[17px] font-bold text-heading font-display">Billing</h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  ['Freight Rate', '₹ 42,500'],
-                  ['Fuel Surcharge', '₹ 6,180'],
-                  ['Total Payable', '₹ 48,680'],
-                ].map(([label, value]) => (
+                {(isAir
+                  ? [
+                    ['Air Freight Rate', '₹ 3,18,400'],
+                    ['Fuel & Security Surcharge', '₹ 54,900'],
+                    ['Total Payable', '₹ 3,73,300'],
+                  ]
+                  : [
+                    ['Freight Rate', '₹ 42,500'],
+                    ['Fuel Surcharge', '₹ 6,180'],
+                    ['Total Payable', '₹ 48,680'],
+                  ]
+                ).map(([label, value]) => (
                   <div key={label} className="bg-app-panel border border-app-border rounded-xl px-4 py-3">
                     <p className="text-[11px] uppercase tracking-wider text-muted font-semibold">{label}</p>
                     <p className="text-[18px] font-bold text-heading font-display mt-1">{value}</p>
                   </div>
                 ))}
               </div>
+              <p className="text-[12px] text-muted flex items-center gap-1.5">
+                <Gauge size={13} className="text-primary" />
+                Billed on {billedOnVolume ? 'volumetric' : 'actual'} weight of {chargeable?.toLocaleString()} kg
+                {' '}at the {selectedCargo.rateMultiplier.toFixed(2)}× {selectedCargo.label.toLowerCase()} multiplier.
+              </p>
             </section>
           )}
         </div>

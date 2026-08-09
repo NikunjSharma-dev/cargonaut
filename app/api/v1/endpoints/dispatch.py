@@ -2,11 +2,15 @@
 Cargonaut — Dispatch & Route Optimization Engine
 Solves the Vehicle Routing Problem (VRP) using Pandas + Google OR-Tools.
 Heavy computation is offloaded to Celery workers.
+
+Road and air shipments are planned in separate buckets: an order may only go to
+a driver whose assigned asset flies (or drives) the same mode and satisfies the
+cargo's handling requirements.
 """
 
 import math
 import time
-from typing import Dict, List
+from typing import Callable, Dict, List, Optional, Set
 from uuid import UUID
 
 import numpy as np
@@ -14,11 +18,18 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import TokenPayload, get_current_user
-from app.models.models import Driver, Order, OrderStatus
-from app.schemas.schemas import DispatchOptimizeRequest, DispatchOptimizeResponse, DispatchResult
+from app.models.models import Driver, Order, OrderStatus, TransportMode, mode_for_vehicle_type
+from app.schemas.schemas import (
+    DispatchOptimizeRequest,
+    DispatchOptimizeResponse,
+    DispatchResult,
+    UnassignedOrder,
+)
+from app.services.cargo_rules import check_compatibility, estimate_cost, estimate_duration_minutes
 
 router = APIRouter()
 
@@ -51,10 +62,15 @@ def greedy_vrp(
     orders_df: pd.DataFrame,
     drivers_df: pd.DataFrame,
     max_per_driver: int = 20,
+    eligible: Optional[Callable[[str, str], bool]] = None,
 ) -> Dict:
     """
     Greedy nearest-neighbour VRP approximation using Pandas.
     For production, replace with OR-Tools CVRP solver.
+
+    `eligible(order_id, driver_id)` gates each pairing so cargo only lands on an
+    asset that can legally carry it. Orders with no eligible driver come back in
+    `unassigned` rather than being forced onto the wrong vehicle.
     """
     if drivers_df.empty or "id" not in drivers_df.columns:
         return {"assignments": {}, "unassigned": list(orders_df["id"].astype(str)) if not orders_df.empty and "id" in orders_df.columns else []}
@@ -85,6 +101,8 @@ def greedy_vrp(
         for _ in range(len(driver_ids)):
             did = driver_ids[driver_idx % len(driver_ids)]
             driver_idx += 1
+            if eligible is not None and not eligible(order_id, did):
+                continue
             if driver_order_counts[did] < max_per_driver:
                 assignments[did].append(order_id)
                 driver_order_counts[did] += 1
@@ -113,14 +131,17 @@ async def optimize_dispatch(
             Order.status.in_([OrderStatus.DRAFT, OrderStatus.CONFIRMED]),
         )
     )
+    if request.transport_mode:
+        orders_q = orders_q.where(Order.transport_mode == request.transport_mode)
     orders_result = await db.execute(orders_q)
     orders = orders_result.scalars().all()
 
     if not orders:
         raise HTTPException(status_code=404, detail="No eligible orders found")
 
-    # 2. Fetch drivers
-    drivers_q = select(Driver).where(
+    # 2. Fetch drivers with the asset they are signed on to — the vehicle is what
+    #    decides which mode and which cargo the driver can actually take.
+    drivers_q = select(Driver).options(selectinload(Driver.vehicle)).where(
         and_(
             Driver.tenant_id == current_user.tenant_id,
             Driver.is_active.is_(True),
@@ -135,18 +156,38 @@ async def optimize_dispatch(
     if not drivers:
         raise HTTPException(status_code=404, detail="No available drivers found")
 
-    # 3. Convert to Pandas DataFrames
-    orders_data = [
-        {
-            "id": str(o.id),
-            "lat": o.delivery_latitude or 0.0,
-            "lon": o.delivery_longitude or 0.0,
-            "weight_kg": o.weight_kg or 0.0,
-            "priority": o.priority,
-            "city": o.delivery_city,
-        }
-        for o in orders
-    ]
+    # 3. Work out each driver's mode from their vehicle; unassigned drivers are
+    #    treated as road crew, which is what a dispatcher would assume.
+    driver_mode: Dict[str, TransportMode] = {}
+    for d in drivers:
+        driver_mode[str(d.id)] = (
+            mode_for_vehicle_type(d.vehicle.vehicle_type) if d.vehicle else TransportMode.ROAD
+        )
+
+    # 4. Pre-pass: which drivers may carry which order, and why not
+    eligible_pairs: Dict[str, Set[str]] = {}
+    rejections: Dict[str, str] = {}
+    for o in orders:
+        oid = str(o.id)
+        order_mode = TransportMode(o.transport_mode)
+        allowed: Set[str] = set()
+        reason = f"No {order_mode.value} asset available for this cargo"
+        for d in drivers:
+            did = str(d.id)
+            if driver_mode[did] is not order_mode:
+                continue
+            ok, why = check_compatibility(o.cargo_type, order_mode, d.vehicle)
+            if ok:
+                allowed.add(did)
+            elif why:
+                reason = why
+        eligible_pairs[oid] = allowed
+        if not allowed:
+            rejections[oid] = reason
+
+    # 5. Plan each mode separately, then merge
+    assignments: Dict[str, List[str]] = {str(d.id): [] for d in drivers}
+
     drivers_data = [
         {
             "id": str(d.id),
@@ -154,21 +195,55 @@ async def optimize_dispatch(
             "is_available": d.is_available,
             "lat": d.current_latitude or 0.0,
             "lon": d.current_longitude or 0.0,
+            "mode": driver_mode[str(d.id)].value,
         }
         for d in drivers
     ]
-
-    orders_df = pd.DataFrame(orders_data)
     drivers_df = pd.DataFrame(drivers_data)
 
-    # 4. Run VRP optimization
-    result = greedy_vrp(orders_df, drivers_df, max_per_driver=request.max_orders_per_driver)
+    for mode in (TransportMode.ROAD, TransportMode.AIR):
+        mode_orders = [
+            o for o in orders
+            if TransportMode(o.transport_mode) is mode and str(o.id) not in rejections
+        ]
+        if not mode_orders:
+            continue
 
-    # 5. Build response
+        mode_drivers_df = drivers_df[drivers_df["mode"] == mode.value]
+        if mode_drivers_df.empty:
+            for o in mode_orders:
+                rejections[str(o.id)] = f"No {mode.value} driver on shift"
+            continue
+
+        orders_df = pd.DataFrame([
+            {
+                "id": str(o.id),
+                "lat": o.delivery_latitude or 0.0,
+                "lon": o.delivery_longitude or 0.0,
+                "weight_kg": o.weight_kg or 0.0,
+                "priority": o.priority,
+                "city": o.delivery_city,
+            }
+            for o in mode_orders
+        ])
+
+        result = greedy_vrp(
+            orders_df,
+            mode_drivers_df,
+            max_per_driver=request.max_orders_per_driver,
+            eligible=lambda oid, did: did in eligible_pairs.get(oid, set()),
+        )
+        for did, oids in result["assignments"].items():
+            assignments[did].extend(oids)
+        for oid in result["unassigned"]:
+            rejections.setdefault(oid, "All eligible drivers are at their order limit")
+
+    # 6. Build response
     driver_map = {str(d.id): d for d in drivers}
+    order_map = {str(o.id): o for o in orders}
     dispatch_results = []
 
-    for driver_id, assigned_order_ids in result["assignments"].items():
+    for driver_id, assigned_order_ids in assignments.items():
         if not assigned_order_ids:
             continue
 
@@ -176,8 +251,10 @@ async def optimize_dispatch(
         if not driver:
             continue
 
+        mode = driver_mode[driver_id]
+
         # Estimate distance (sum of haversine distances in sequence)
-        assigned_orders = [o for o in orders if str(o.id) in assigned_order_ids]
+        assigned_orders = [order_map[oid] for oid in assigned_order_ids if oid in order_map]
         total_km = 0.0
         prev_lat = driver.current_latitude or 0.0
         prev_lon = driver.current_longitude or 0.0
@@ -188,14 +265,22 @@ async def optimize_dispatch(
             total_km += haversine_km(prev_lat, prev_lon, lat, lon)
             prev_lat, prev_lon = lat, lon
 
-        estimated_minutes = int((total_km / 40.0) * 60)  # assume 40 km/h avg
+        # Air legs cruise ~20x faster than a truck but carry hours of terminal
+        # handling, so both come from the mode profile rather than a constant.
+        estimated_minutes = estimate_duration_minutes(total_km, mode)
+        leg_cost = sum(
+            estimate_cost(total_km / len(assigned_orders), mode, ao.cargo_type)
+            for ao in assigned_orders
+        ) if assigned_orders else 0.0
 
         dispatch_results.append(DispatchResult(
             driver_id=UUID(driver_id),
             driver_name=driver.full_name,
+            transport_mode=mode,
             assigned_order_ids=[UUID(oid) for oid in assigned_order_ids],
             estimated_distance_km=round(total_km, 2),
             estimated_duration_minutes=estimated_minutes,
+            estimated_cost=round(leg_cost, 2),
             route_sequence=list(range(len(assigned_order_ids))),
         ))
 
@@ -207,7 +292,15 @@ async def optimize_dispatch(
         status="completed",
         assignments=dispatch_results,
         total_orders=len(orders),
-        unassigned_order_ids=[UUID(oid) for oid in result["unassigned"]],
+        unassigned_order_ids=[UUID(oid) for oid in rejections],
+        unassigned=[
+            UnassignedOrder(
+                order_id=UUID(oid),
+                order_number=order_map[oid].order_number if oid in order_map else "—",
+                reason=reason,
+            )
+            for oid, reason in rejections.items()
+        ],
         optimization_time_ms=round(elapsed_ms, 2),
     )
 
@@ -229,7 +322,7 @@ async def manually_assign_driver(
         raise HTTPException(status_code=404, detail="Order not found")
 
     driver_result = await db.execute(
-        select(Driver).where(
+        select(Driver).options(selectinload(Driver.vehicle)).where(
             and_(Driver.id == driver_id, Driver.tenant_id == current_user.tenant_id)
         )
     )
@@ -237,7 +330,14 @@ async def manually_assign_driver(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
 
+    # A manual override still may not put cargo on an asset that cannot carry it
+    ok, reason = check_compatibility(order.cargo_type, order.transport_mode, driver.vehicle)
+    if not ok:
+        raise HTTPException(status_code=422, detail=reason)
+
     order.driver_id = driver_id
+    if driver.vehicle:
+        order.vehicle_id = driver.vehicle.id
     order.status = OrderStatus.DISPATCHED
     await db.commit()
     return {"message": f"Order {order.order_number} assigned to {driver.full_name}"}

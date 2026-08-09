@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { CheckCircle, MapPin, Navigation, Phone, Clock, Truck } from 'lucide-react'
 import api from '../utils/api'
-import { StatusBadge } from '../components/ui'
+import { StatusBadge, CargoBadge, TransportModeBadge } from '../components/ui'
+
 import clsx from 'clsx'
 
 export default function DriverViewPage() {
@@ -105,11 +106,19 @@ export default function DriverViewPage() {
             <div key={stop.id} className="card space-y-3 shadow-card border-app-border">
               <div className="flex justify-between items-start">
                 <div>
-                  <span className="text-xs font-mono font-bold text-primary">{stop.order_number}</span>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-xs font-mono font-bold text-primary">{stop.order_number}</span>
+                    <TransportModeBadge mode={stop.transport_mode || 'road'} />
+                    <CargoBadge type={stop.cargo_type || 'general'} />
+                  </div>
                   <h3 className="font-bold text-heading text-base font-display">{stop.customer_name}</h3>
+                  {stop.air_waybill_number && (
+                    <p className="text-[10px] text-purple-700 font-bold font-mono">AWB {stop.air_waybill_number} (Flight {stop.flight_number || 'CG412'})</p>
+                  )}
                 </div>
                 <StatusBadge status={stop.status} />
               </div>
+
 
               <div className="text-xs text-body space-y-1 pt-2 border-t border-app-border">
                 <div className="flex items-center gap-1.5">

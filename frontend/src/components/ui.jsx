@@ -1,7 +1,9 @@
 import { useId } from 'react'
 import clsx from 'clsx'
-import { X, AlertCircle, Loader2, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { X, AlertCircle, Loader2, TrendingUp, TrendingDown, Minus, Truck, Plane } from 'lucide-react'
 import { STATUS_BADGE, VEHICLE_STATUS_COLOR } from '../utils/helpers.js'
+import { cargoMeta } from '../utils/cargo.js'
+
 
 // ─── Sparkline ─────────────────────────────────────────────────────────────────
 // Plain inline SVG on purpose: recharts' ResponsiveContainer mis-measures inside
@@ -237,6 +239,42 @@ export function PriorityBadge({ priority }) {
   return <span className={clsx('px-2.5 py-0.5 rounded-full text-xs font-semibold border', cls)}>{label}</span>
 }
 
+// ─── Cargo & Transport Mode Badges ──────────────────────────────────────────
+
+export function CargoBadge({ type, size = 'sm' }) {
+  const meta = cargoMeta(type)
+  const Icon = meta.icon
+  return (
+    <span className={clsx(
+      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-all',
+      meta.tone === 'cargo-cold' && 'bg-blue-50 text-blue-700 border-blue-200',
+      meta.tone === 'cargo-fragile' && 'bg-purple-50 text-purple-700 border-purple-200',
+      meta.tone === 'cargo-hazard' && 'bg-red-50 text-red-700 border-red-200',
+      meta.tone === 'cargo-bulk' && 'bg-amber-50 text-amber-700 border-amber-200',
+      meta.tone === 'cargo-value' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      meta.tone === 'cargo-neutral' && 'bg-app-hover text-body border-app-border'
+    )}>
+      <Icon size={size === 'sm' ? 12 : 14} className="flex-shrink-0" />
+      <span>{meta.label}</span>
+    </span>
+  )
+}
+
+export function TransportModeBadge({ mode }) {
+  const isAir = mode === 'air'
+  return (
+    <span className={clsx(
+      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wider',
+      isAir
+        ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300'
+        : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+    )}>
+      {isAir ? <Plane size={13} className="flex-shrink-0" /> : <Truck size={13} className="flex-shrink-0" />}
+      <span>{isAir ? 'Air Freight' : 'Road Transport'}</span>
+    </span>
+  )
+}
+
 // ─── FormField Component ──────────────────────────────────────────────────────
 
 export function FormField({ label, error, required, children }) {
@@ -270,4 +308,6 @@ export function SectionHeader({ title, subtitle, actions }) {
     </div>
   )
 }
+
+
 

@@ -5,19 +5,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import TokenPayload, get_current_user
-from app.models.models import Hub
+from app.models.models import Hub, HubType
 from app.schemas.schemas import HubCreate, HubResponse, HubUpdate
 
 router = APIRouter()
 
 @router.get("/", response_model=list[HubResponse])
-async def list_hubs(current_user: TokenPayload = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Hub).where(Hub.tenant_id == current_user.tenant_id))
+async def list_hubs(
+    handles_air_cargo: bool | None = None,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Hub).where(Hub.tenant_id == current_user.tenant_id)
+    if handles_air_cargo is not None:
+        query = query.where(Hub.handles_air_cargo.is_(handles_air_cargo))
+    result = await db.execute(query)
     return result.scalars().all()
 
 @router.post("/", response_model=HubResponse, status_code=201)
 async def create_hub(data: HubCreate, current_user: TokenPayload = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    hub = Hub(tenant_id=current_user.tenant_id, **data.model_dump())
+    payload = data.model_dump()
+    if data.hub_type is HubType.AIR_CARGO_TERMINAL:
+        if not data.iata_code:
+            raise HTTPException(status_code=422, detail="An air cargo terminal needs its IATA code")
+        # A terminal that cannot handle air cargo is a contradiction
+        payload["handles_air_cargo"] = True
+    hub = Hub(tenant_id=current_user.tenant_id, **payload)
     db.add(hub)
     await db.commit()
     await db.refresh(hub)

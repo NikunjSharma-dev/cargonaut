@@ -67,12 +67,49 @@ class VehicleStatus(str, PyEnum):
     OFFLINE     = "offline"
 
 
+class TransportMode(str, PyEnum):
+    """How a shipment moves. Drives capacity, ETA and handling rules."""
+    ROAD = "road"
+    AIR  = "air"
+
+
 class VehicleType(str, PyEnum):
     TRUCK      = "truck"
     VAN        = "van"
     BIKE       = "bike"
     CAR        = "car"
     MOTORCYCLE = "motorcycle"
+    FREIGHTER  = "freighter"   # wide-body cargo aircraft
+    TURBOPROP  = "turboprop"   # regional feeder freighter
+
+
+# Vehicle types that fly. Everything else is road.
+AIR_VEHICLE_TYPES = frozenset({VehicleType.FREIGHTER, VehicleType.TURBOPROP})
+
+
+def mode_for_vehicle_type(vehicle_type: "VehicleType") -> "TransportMode":
+    return TransportMode.AIR if vehicle_type in AIR_VEHICLE_TYPES else TransportMode.ROAD
+
+
+class CargoType(str, PyEnum):
+    """What is inside the shipment — decides handling, equipment and mode."""
+    GENERAL      = "general"
+    PARCEL       = "parcel"
+    PALLETIZED   = "palletized"
+    REFRIGERATED = "refrigerated"
+    FRAGILE      = "fragile"
+    HAZMAT       = "hazmat"
+    LIQUID_BULK  = "liquid_bulk"
+    OVERSIZED    = "oversized"
+    HIGH_VALUE   = "high_value"
+
+
+# Volumetric (dimensional) weight factors. Air is the IATA 1:167 kg/m³ standard;
+# road freight is billed against a denser 333 kg/m³ equivalent.
+VOLUMETRIC_FACTOR_KG_PER_M3 = {
+    TransportMode.ROAD: 333.0,
+    TransportMode.AIR:  167.0,
+}
 
 
 class OrderStatus(str, PyEnum):
@@ -91,6 +128,7 @@ class HubType(str, PyEnum):
     DISTRIBUTION_CENTER = "distribution_center"
     PICKUP_POINT        = "pickup_point"
     CROSS_DOCK          = "cross_dock"
+    AIR_CARGO_TERMINAL  = "air_cargo_terminal"
 
 
 class FuelType(str, PyEnum):
@@ -99,6 +137,7 @@ class FuelType(str, PyEnum):
     ELECTRIC = "electric"
     HYBRID   = "hybrid"
     CNG      = "cng"
+    JET_A1   = "jet_a1"   # aviation turbine fuel
 
 
 # ─── Tenant ───────────────────────────────────────────────────────────────────
@@ -170,6 +209,8 @@ class Hub(Base):
     contact_phone         = Column(String(20),  nullable=True)
     is_active             = Column(Boolean, default=True)
     capacity              = Column(Integer, nullable=True)
+    iata_code             = Column(String(3), nullable=True)   # set on air cargo terminals
+    handles_air_cargo     = Column(Boolean, nullable=False, default=False)
     created_at            = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at            = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
@@ -190,10 +231,17 @@ class Vehicle(Base):
     model                   = Column(String(100), nullable=True)
     year                    = Column(Integer,     nullable=True)
     vehicle_type            = Column(Enum(VehicleType),   nullable=False, default=VehicleType.VAN)
+    transport_mode          = Column(Enum(TransportMode), nullable=False, default=TransportMode.ROAD, index=True)
     fuel_type               = Column(Enum(FuelType),      nullable=False, default=FuelType.DIESEL)
     payload_capacity_kg     = Column(Float,  nullable=False, default=1000.0)
     volume_capacity_m3      = Column(Float,  nullable=True)
+    has_refrigeration       = Column(Boolean, nullable=False, default=False)
     status                  = Column(Enum(VehicleStatus), nullable=False, default=VehicleStatus.AVAILABLE)
+
+    # Air-freight assets only — null on road vehicles
+    tail_number             = Column(String(12), nullable=True)   # e.g. VT-CGN
+    uld_positions           = Column(Integer,    nullable=True)   # main + lower deck ULD slots
+    range_km                = Column(Float,      nullable=True)   # max stage length
     last_maintenance        = Column(DateTime(timezone=True), nullable=True)
     next_maintenance        = Column(DateTime(timezone=True), nullable=True)
     odometer_km             = Column(Float, default=0.0)
@@ -272,10 +320,18 @@ class Order(Base):
     delivery_geofence_m = Column(Integer, default=150)
 
     description             = Column(Text,    nullable=True)
+    cargo_type              = Column(Enum(CargoType),     nullable=False, default=CargoType.GENERAL, index=True)
+    transport_mode          = Column(Enum(TransportMode), nullable=False, default=TransportMode.ROAD, index=True)
     weight_kg               = Column(Float,   nullable=True)
     volume_m3               = Column(Float,   nullable=True)
+    pieces                  = Column(Integer, nullable=True)
     fragile                 = Column(Boolean, default=False)
     requires_refrigeration  = Column(Boolean, default=False)
+
+    # Air freight paperwork — only populated on transport_mode = air
+    air_waybill_number      = Column(String(20), nullable=True, index=True)
+    flight_number           = Column(String(10), nullable=True)
+    hazmat_un_code          = Column(String(10), nullable=True)   # e.g. UN1263
 
     scheduled_pickup   = Column(DateTime(timezone=True), nullable=True)
     scheduled_delivery = Column(DateTime(timezone=True), nullable=True)
@@ -294,6 +350,22 @@ class Order(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
+    @property
+    def chargeable_weight_kg(self) -> float | None:
+        """
+        Freight is billed on whichever is greater: actual weight, or the weight
+        the volume would have at the mode's density factor. Air uses the IATA
+        1:167 kg/m³ rule; road tariffs are denser, so light bulky loads only
+        get up-rated at 333 kg/m³.
+        """
+        if self.weight_kg is None and self.volume_m3 is None:
+            return None
+        actual = self.weight_kg or 0.0
+        if not self.volume_m3:
+            return round(actual, 2)
+        factor = VOLUMETRIC_FACTOR_KG_PER_M3[TransportMode(self.transport_mode)]
+        return round(max(actual, self.volume_m3 * factor), 2)
+
     tenant          = relationship("Tenant",  back_populates="orders")
     driver          = relationship("Driver",  back_populates="orders")
     vehicle         = relationship("Vehicle", back_populates="orders")
@@ -303,6 +375,7 @@ class Order(Base):
     __table_args__ = (
         Index("ix_orders_tenant_status", "tenant_id", "status"),
         Index("ix_orders_tenant_number", "tenant_id", "order_number"),
+        Index("ix_orders_tenant_mode", "tenant_id", "transport_mode"),
     )
 
 

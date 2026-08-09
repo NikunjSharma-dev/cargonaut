@@ -5,6 +5,7 @@ Solves the Capacitated Vehicle Routing Problem (CVRP) considering:
   - Vehicle payload capacity (kg / m³)
   - Driver shift limits & current GPS positions
   - Order weight, volume, priority, and delivery time windows
+  - Transport mode: an air shipment only goes to a driver crewing a freighter
   - Vectorized Haversine distance & duration matrix (OSRM API ready)
 """
 
@@ -15,7 +16,11 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 
+from app.services.cargo_rules import estimate_duration_minutes
+
 logger = logging.getLogger(__name__)
+
+DEFAULT_MODE = "road"
 
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -72,6 +77,8 @@ class CVRPOptimizer:
                 "assignments": {},
                 "unassigned": [str(o["id"]) for o in self.orders],
                 "total_distance_km": 0.0,
+                "distance_by_mode_km": {},
+                "duration_by_mode_minutes": {},
             }
 
         orders_df = pd.DataFrame(self.orders)
@@ -89,6 +96,7 @@ class CVRPOptimizer:
         }
         unassigned: List[str] = []
         total_distance = 0.0
+        distance_by_mode: Dict[str, float] = {}
 
         for _, order in orders_df.iterrows():
             order_id = str(order["id"])
@@ -99,9 +107,15 @@ class CVRPOptimizer:
             order_lat = float(order.get("lat", 0.0))
             order_lon = float(order.get("lon", 0.0))
 
+            order_mode = str(order.get("mode", DEFAULT_MODE) or DEFAULT_MODE)
+
             for d in self.drivers:
                 did = str(d["id"])
                 current_orders_count = len(assignments[did])
+
+                # An air shipment cannot be served by road crew, and vice versa
+                if str(d.get("mode", DEFAULT_MODE) or DEFAULT_MODE) != order_mode:
+                    continue
 
                 # Capacity & order limit checks
                 if current_orders_count >= self.max_orders_per_driver:
@@ -128,6 +142,7 @@ class CVRPOptimizer:
                 assignments[best_driver_id].append(order_id)
                 driver_loads[best_driver_id] += order_weight
                 total_distance += min_dist
+                distance_by_mode[order_mode] = distance_by_mode.get(order_mode, 0.0) + min_dist
             else:
                 unassigned.append(order_id)
 
@@ -135,4 +150,8 @@ class CVRPOptimizer:
             "assignments": assignments,
             "unassigned": unassigned,
             "total_distance_km": round(total_distance, 2),
+            "distance_by_mode_km": {m: round(km, 2) for m, km in distance_by_mode.items()},
+            "duration_by_mode_minutes": {
+                m: estimate_duration_minutes(km, m) for m, km in distance_by_mode.items()
+            },
         }

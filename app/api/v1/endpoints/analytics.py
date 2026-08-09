@@ -12,8 +12,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import TokenPayload, get_current_user
-from app.models.models import Driver, Order, OrderStatus, Vehicle, VehicleStatus
-from app.schemas.schemas import DashboardStats, OrderStatusBreakdown
+from app.models.models import (
+    Driver,
+    Order,
+    OrderStatus,
+    TransportMode,
+    Vehicle,
+    VehicleStatus,
+)
+from app.schemas.schemas import (
+    CargoMixItem,
+    DashboardStats,
+    OrderStatusBreakdown,
+    TransportModeBreakdown,
+)
+from app.services.cargo_rules import mode_profile_for, profile_for
 
 router = APIRouter()
 
@@ -146,6 +159,22 @@ async def get_dashboard_stats(
     )
     revenue_month = float(revenue_month_r.scalar() or 0)
 
+    # Road / air split
+    air_orders_r = await db.execute(
+        select(func.count()).where(
+            and_(Order.tenant_id == tid, Order.transport_mode == TransportMode.AIR)
+        )
+    )
+    air_orders = air_orders_r.scalar() or 0
+    road_orders = total_orders - air_orders
+
+    air_vehicles_r = await db.execute(
+        select(func.count()).where(
+            and_(Vehicle.tenant_id == tid, Vehicle.transport_mode == TransportMode.AIR)
+        )
+    )
+    air_capable_vehicles = air_vehicles_r.scalar() or 0
+
     return DashboardStats(
         total_orders=total_orders,
         orders_today=orders_today,
@@ -160,7 +189,80 @@ async def get_dashboard_stats(
         avg_delivery_time_hours=avg_delivery_time,
         revenue_today=revenue_today,
         revenue_month=revenue_month,
+        road_orders=road_orders,
+        air_orders=air_orders,
+        air_freight_share_pct=round(air_orders / total_orders * 100, 1) if total_orders else 0.0,
+        air_capable_vehicles=air_capable_vehicles,
     )
+
+
+@router.get("/cargo/mix", response_model=List[CargoMixItem])
+async def get_cargo_mix(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Order count and tonnage per cargo type — what the tenant actually moves."""
+    result = await db.execute(
+        select(
+            Order.cargo_type,
+            func.count().label("count"),
+            func.coalesce(func.sum(Order.weight_kg), 0).label("weight"),
+        ).where(Order.tenant_id == current_user.tenant_id).group_by(Order.cargo_type)
+    )
+    rows = result.fetchall()
+    total = sum(r.count for r in rows)
+
+    return [
+        CargoMixItem(
+            cargo_type=r.cargo_type.value,
+            label=profile_for(r.cargo_type).label,
+            count=r.count,
+            percentage=round(r.count / total * 100, 1) if total else 0.0,
+            total_weight_kg=round(float(r.weight or 0), 2),
+        )
+        for r in sorted(rows, key=lambda r: r.count, reverse=True)
+    ]
+
+
+@router.get("/cargo/mode-split", response_model=List[TransportModeBreakdown])
+async def get_transport_mode_split(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Road vs air: order share, tonnage and how many assets serve each mode."""
+    tid = current_user.tenant_id
+
+    orders_r = await db.execute(
+        select(
+            Order.transport_mode,
+            func.count().label("count"),
+            func.coalesce(func.sum(Order.weight_kg), 0).label("weight"),
+        ).where(Order.tenant_id == tid).group_by(Order.transport_mode)
+    )
+    order_rows = {r.transport_mode: r for r in orders_r.fetchall()}
+
+    vehicles_r = await db.execute(
+        select(Vehicle.transport_mode, func.count().label("count"))
+        .where(Vehicle.tenant_id == tid).group_by(Vehicle.transport_mode)
+    )
+    vehicle_counts = {r.transport_mode: r.count for r in vehicles_r.fetchall()}
+
+    total = sum(r.count for r in order_rows.values())
+
+    return [
+        TransportModeBreakdown(
+            transport_mode=mode.value,
+            label=mode_profile_for(mode).label,
+            orders=order_rows[mode].count if mode in order_rows else 0,
+            percentage=(
+                round(order_rows[mode].count / total * 100, 1)
+                if total and mode in order_rows else 0.0
+            ),
+            total_weight_kg=round(float(order_rows[mode].weight or 0), 2) if mode in order_rows else 0.0,
+            vehicles=vehicle_counts.get(mode, 0),
+        )
+        for mode in (TransportMode.ROAD, TransportMode.AIR)
+    ]
 
 
 @router.get("/orders/status-breakdown", response_model=List[OrderStatusBreakdown])
@@ -235,6 +337,7 @@ async def get_fleet_utilization(
             "vehicle_id": str(v.id),
             "registration_number": v.registration_number,
             "vehicle_type": v.vehicle_type.value,
+            "transport_mode": v.transport_mode.value,
             "status": v.status.value,
             "orders_completed": orders_completed,
             "total_km": v.odometer_km,
