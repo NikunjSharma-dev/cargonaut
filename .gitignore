@@ -1,0 +1,40 @@
+# ── Secrets & local config ──────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Local databases ─────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+Environments/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# ── Node / frontend ─────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+.vite/
+npm-debug.log*
+yarn-error.log*
+
+# ── Editors & OS ────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+*.swp
+
+# ── Agent/tooling scratch ───────────────────────────────────────────────────
+.claude/settings.local.json
