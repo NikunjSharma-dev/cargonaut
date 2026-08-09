@@ -217,7 +217,7 @@ export function CargoChip({ type, className = '', showIcon = true }) {
   const meta = cargoMeta(type)
   const Icon = meta.icon
   return (
-    <span className={clsx('cargo-chip', meta.tone, className)} title={meta.description}>
+    <span className={clsx('cargo-chip', meta.tone, className)}>
       {showIcon && <Icon size={12} strokeWidth={2.2} />}
       {meta.label}
     </span>
@@ -453,7 +453,6 @@ export default function TrackingPage() {
                     key={c.key}
                     onClick={() => setCargoFilter(cur => (cur === c.key ? null : c.key))}
                     className={clsx('chip', cargoFilter === c.key && 'active')}
-                    title={c.meta.description}
                   >
                     <Icon size={13} className="flex-shrink-0" />
                     {c.meta.label}
@@ -502,7 +501,7 @@ export default function TrackingPage() {
         </div>
 
         {/* Fleet cards */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="flex-1 overflow-y-auto px-6 pb-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {visibleFleet.map(vehicle => {
               const isSelected = vehicle.id === selectedId

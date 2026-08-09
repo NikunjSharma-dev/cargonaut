@@ -183,10 +183,11 @@ export default function VehicleGraphic({
           <path d="M152 87 a11 11 0 0 1 0 20 z" fill={PANEL} />
           <circle cx="112" cy="97" r="6" fill={GLASS} opacity="0.8" />
 
-          {/* Nose gear and main gear */}
-          <rect x="296" y="76" width="5" height="10" fill={CHASSIS} />
+          {/* Nose gear and main gear with connected struts */}
+          <rect x="295.5" y="74" width="5" height="16" fill={OUTLINE} />
           <Wheel cx={298} cy={90} r={7} />
-          <rect x="188" y="76" width="6" height="12" fill={CHASSIS} />
+          <rect x="181.5" y="74" width="5" height="18" fill={OUTLINE} />
+          <rect x="199.5" y="74" width="5" height="18" fill={OUTLINE} />
           <Wheel cx={184} cy={92} r={8} />
           <Wheel cx={202} cy={92} r={8} />
         </g>
@@ -221,9 +222,11 @@ export default function VehicleGraphic({
           <ellipse cx="222" cy="44" rx="1.6" ry="26" fill={OUTLINE} opacity="0.5" />
 
           {/* Gear: nose leg plus the sponson-mounted main gear */}
-          <rect x="282" y="79" width="5" height="9" fill={CHASSIS} />
+          <rect x="281.5" y="78" width="5" height="14" fill={OUTLINE} />
           <Wheel cx={284} cy={92} r={7} />
-          <path d="M150 79 h44 a8 8 0 0 1 8 8 v4 h-60 v-4 a8 8 0 0 1 8 -8 z" fill={CHASSIS} />
+          <path d="M150 79 h44 a8 8 0 0 1 8 8 v4 h-60 v-4 a8 8 0 0 1 8 -8 z" fill={PANEL} stroke={OUTLINE} strokeWidth="1.5" />
+          <rect x="155.5" y="87" width="5" height="7" fill={OUTLINE} />
+          <rect x="185.5" y="87" width="5" height="7" fill={OUTLINE} />
           <Wheel cx={158} cy={94} r={7} />
           <Wheel cx={188} cy={94} r={7} />
         </g>
