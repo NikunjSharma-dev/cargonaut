@@ -52,11 +52,10 @@ function CountBadge({ value, active }) {
   )
 }
 
-export default function Sidebar({ mobileOpen, onClose, onOpenCreateOrder }) {
+export default function Sidebar({ mobileOpen, onClose, onOpenCreateOrder, collapsed, onToggleCollapse }) {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
-  const [collapsed, setCollapsed] = useState(false)
   const [openGroups, setOpenGroups] = useState({ request: true, analysis: false })
 
   function toggleGroup(key) {
@@ -223,7 +222,7 @@ export default function Sidebar({ mobileOpen, onClose, onOpenCreateOrder }) {
               </button>
             )}
             <button
-              onClick={() => setCollapsed(prev => !prev)}
+              onClick={onToggleCollapse}
               className="hidden lg:flex p-1.5 rounded-lg text-subtle hover:text-body hover:bg-app-hover transition-colors ml-auto"
               title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >

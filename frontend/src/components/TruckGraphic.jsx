@@ -155,7 +155,7 @@ export default function TruckGraphic({
           fill="#ffffff"
           fontSize="38"
           fontWeight="800"
-          fontFamily="Plus Jakarta Sans, Inter, sans-serif"
+          fontFamily="Geist, system-ui, sans-serif"
           letterSpacing="-1"
         >
           {pct}%

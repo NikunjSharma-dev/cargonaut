@@ -130,7 +130,10 @@ git clone https://github.com/NikunjSharma-dev/cargonaut
 cd cargonaut
 cp .env.example .env
 docker compose up --build -d
+docker compose exec api python scripts/seed_demo.py   # creates the demo login
 ```
+
+Sign in with **admin@demo.com** / **demo1234**.
 
 | Service | URL |
 |---------|-----|
@@ -148,8 +151,8 @@ docker compose up -d --build frontend   # rebuild the UI after a change
 docker compose down               # stop (add -v to also drop data volumes)
 ```
 
-> A freshly created database has **no users**, so login returns `401`. The frontend falls back to a
-> demo session so the UI is explorable; seed a real user before using the API for anything.
+> Without the seed step the database has **no users**, so login returns `401` and every write is
+> rejected. The UI still opens in a clearly badged **Demo mode**, but nothing it sends will be saved.
 
 ### Frontend only
 
@@ -167,6 +170,7 @@ npm run lint
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
+python scripts/seed_demo.py
 uvicorn app.main:app --reload
 ```
 
@@ -210,6 +214,7 @@ celery -A app.workers.celery_app worker --loglevel=info -E
 │   └── Dockerfile                multi-stage node build → nginx
 ├── analytics/sql_views/          reporting views for BI tools
 ├── infra/                        API Dockerfile, DB init, Prometheus config
+├── scripts/seed_demo.py          demo tenant, admin login, fleet, and orders
 ├── migrations/                   Alembic
 ├── tests/                        pytest suite
 ├── docker-compose.yml            db · redis · api · worker · frontend
@@ -373,7 +378,8 @@ The frontend deploys to **GitHub Pages** automatically on every push to `main` t
 |---------|---------------|
 | App renders unstyled | `frontend/postcss.config.cjs` missing — Tailwind never compiles without it |
 | Docker build fails on esbuild platform | Missing `.dockerignore`; host `node_modules` overwrote the container's Linux binaries |
-| Login returns 401 | Fresh database has no users. Seed one, or use the demo session |
+| Login returns 401 | Database has no users — run `python scripts/seed_demo.py` |
+| Writes fail while the UI looks signed in | You are on the placeholder session; the "Demo mode" chip in the top bar marks it. Seed a user and sign in |
 | `/api/...` 404 through nginx | Routes live under `/api/v1/...`; check the path prefix |
 | Deep links 404 on Pages | `404.html` fallback missing, or `VITE_BASE` not set to `/<repo>/` |
 | Map tiles blank | Leaflet tiles come from CARTO — network egress required |
@@ -383,7 +389,6 @@ The frontend deploys to **GitHub Pages** automatically on every push to `main` t
 
 ## Roadmap
 
-- [ ] Seed script for demo tenant, users, fleet, and orders
 - [ ] Swap the greedy heuristic for OR-Tools with time windows
 - [ ] WebSocket GPS stream wired to the tracking map (endpoint exists, UI polls today)
 - [ ] Driver-facing PWA with offline proof-of-delivery capture

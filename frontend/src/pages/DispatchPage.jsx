@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Zap, CheckSquare, Square, MapPin, User, ArrowRight, ShieldCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
-import api from '../utils/api'
+import api, { apiStatus } from '../utils/api'
 import { PageLoader, EmptyState, StatusBadge } from '../components/ui'
 import { fmtKm } from '../utils/helpers'
 
@@ -18,6 +18,12 @@ export default function DispatchPage() {
         .then(r => r.data),
   })
 
+  // Shown when the API is unreachable so the screen is still explorable
+  const DEMO_ORDERS = [
+    { id: '101', order_number: 'ORD-9421', customer_name: 'Acme Retail Corp', delivery_city: 'Delhi', delivery_address: 'Terminal 4 Industrial', weight_kg: 14200 },
+    { id: '103', order_number: 'ORD-9423', customer_name: 'Metro Express Inc', delivery_city: 'Hyderabad', delivery_address: 'Warehouse Hub 3', weight_kg: 19800 },
+  ]
+
   const { data: drivers } = useQuery({
     queryKey: ['available-drivers'],
     queryFn: () => api.get('/drivers/').then(r => r.data),
@@ -32,11 +38,16 @@ export default function DispatchPage() {
     onError: err => toast.error(err.response?.data?.detail || 'Optimization failed'),
   })
 
+  // A GET that could not reach the API resolves to {}, so fall back to demo
+  // rows only when the API is actually unreachable.
+  const isDemoData = !orders?.items && apiStatus.offline
+  const orderItems = orders?.items ?? (isDemoData ? DEMO_ORDERS : [])
+
   function toggleAll() {
-    if (selected.size === orders?.items?.length) {
+    if (selected.size === orderItems.length) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(orders?.items?.map(o => o.id)))
+      setSelected(new Set(orderItems.map(o => o.id)))
     }
   }
 
@@ -102,14 +113,19 @@ export default function DispatchPage() {
           <div className="flex items-center justify-between px-5 py-4 border-b border-app-border bg-app-panel/50">
             <div className="flex items-center gap-3">
               <button onClick={toggleAll} className="text-subtle hover:text-primary transition-colors">
-                {selected.size === orders?.items?.length
+                {orderItems.length > 0 && selected.size === orderItems.length
                   ? <CheckSquare size={18} className="text-primary" />
                   : <Square size={18} />
                 }
               </button>
               <span className="text-xs font-bold text-heading">
-                Confirmed Orders Ready for Dispatch ({orders?.total ?? 4})
+                Confirmed Orders Ready for Dispatch ({orderItems.length})
               </span>
+              {isDemoData && (
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted border border-app-border rounded-full px-2 py-0.5">
+                  Demo data
+                </span>
+              )}
             </div>
             {selected.size > 0 && (
               <span className="text-xs font-bold text-primary bg-primary-soft px-2.5 py-0.5 rounded-full border border-primary/25">
@@ -120,12 +136,15 @@ export default function DispatchPage() {
 
           {isLoading ? (
             <PageLoader />
+          ) : orderItems.length === 0 ? (
+            <EmptyState
+              icon={Zap}
+              title="No confirmed orders"
+              description="Orders move here once they are confirmed and ready for driver assignment."
+            />
           ) : (
             <div className="divide-y divide-app-border max-h-[520px] overflow-y-auto">
-              {(orders?.items || [
-                { id: '101', order_number: 'ORD-9421', customer_name: 'Acme Retail Corp', delivery_city: 'Delhi', delivery_address: 'Terminal 4 Industrial', weight_kg: 14200 },
-                { id: '103', order_number: 'ORD-9423', customer_name: 'Metro Express Inc', delivery_city: 'Hyderabad', delivery_address: 'Warehouse Hub 3', weight_kg: 19800 },
-              ]).map(order => {
+              {orderItems.map(order => {
                 const checked = selected.has(order.id)
                 return (
                   <div

@@ -6,6 +6,7 @@ import clsx from 'clsx'
 
 export default function TopBar({ title, onMenuToggle, onOpenSearch }) {
   const user = useAuthStore(s => s.user)
+  const isDemo = useAuthStore(s => s.isDemo)
   const theme = useThemeStore(s => s.theme)
   const toggleTheme = useThemeStore(s => s.toggle)
   const isDark = resolveTheme(theme) === 'dark'
@@ -48,6 +49,17 @@ export default function TopBar({ title, onMenuToggle, onOpenSearch }) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        {isDemo && (
+          <span
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold
+                       border border-amber-200 bg-amber-50 text-amber-700"
+            title="Signed in with a placeholder session. Sign in with a real account to save changes."
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            Demo mode
+          </span>
+        )}
+
         {/* Date Filter Pill (Reference A/B Detail) */}
         <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-app-panel border border-app-border text-xs font-medium text-body">
           <Calendar size={14} className="text-primary" />

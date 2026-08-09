@@ -2,10 +2,14 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api from '../utils/api'
 
+// Placeholder session so the static demo (GitHub Pages, no backend) is
+// explorable. The API will not accept this token — see isDemo.
+const DEMO_TOKEN = 'demo-token-cargonaut-2026'
+
 export const useAuthStore = create(
   persist(
     (set, get) => ({
-      token: 'demo-token-cargonaut-2026',
+      token: DEMO_TOKEN,
       user: {
         id: 'demo-admin-1',
         email: 'ops@cargonaut.io',
@@ -13,6 +17,7 @@ export const useAuthStore = create(
         role: 'admin_operator',
       },
       tenantId: 'tenant-demo-802',
+      isDemo: true,
 
       login: async (email, password) => {
         try {
@@ -26,13 +31,18 @@ export const useAuthStore = create(
               role: data.role,
             },
             tenantId: data.tenant_id,
+            isDemo: false,
           })
           api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`
           return data
         } catch (err) {
-          // Fallback demo login for presentation
+          // Only stand in for the API when it is unreachable. A rejected
+          // credential must surface, or the user ends up "signed in" holding a
+          // token the API will refuse for every subsequent request.
+          if (err.response) throw err
+
           const demoData = {
-            access_token: 'demo-token-cargonaut-2026',
+            access_token: DEMO_TOKEN,
             user_id: 'demo-admin-1',
             email: email || 'ops@cargonaut.io',
             full_name: 'Fleet Operator',
@@ -43,6 +53,7 @@ export const useAuthStore = create(
             token: demoData.access_token,
             user: { id: demoData.user_id, email: demoData.email, full_name: demoData.full_name, role: demoData.role },
             tenantId: demoData.tenant_id,
+            isDemo: true,
           })
           return demoData
         }
@@ -63,8 +74,9 @@ export const useAuthStore = create(
           })
           return data
         } catch (err) {
+          if (err.response) throw err
           const demoData = {
-            access_token: 'demo-token-cargonaut-2026',
+            access_token: DEMO_TOKEN,
             user_id: 'demo-admin-1',
             email: payload.admin_email || 'ops@cargonaut.io',
             full_name: payload.admin_name || 'Fleet Admin',
@@ -75,13 +87,14 @@ export const useAuthStore = create(
             token: demoData.access_token,
             user: { id: demoData.user_id, email: demoData.email, full_name: demoData.full_name, role: demoData.role },
             tenantId: demoData.tenant_id,
+            isDemo: true,
           })
           return demoData
         }
       },
 
       logout: () => {
-        set({ token: null, user: null, tenantId: null })
+        set({ token: null, user: null, tenantId: null, isDemo: false })
         delete api.defaults.headers.common['Authorization']
       },
 
@@ -94,7 +107,7 @@ export const useAuthStore = create(
     }),
     {
       name: 'cargonaut-auth',
-      partialize: (s) => ({ token: s.token, user: s.user, tenantId: s.tenantId }),
+      partialize: (s) => ({ token: s.token, user: s.user, tenantId: s.tenantId, isDemo: s.isDemo }),
     }
   )
 )

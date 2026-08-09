@@ -26,6 +26,7 @@ export default function AppLayout() {
   const location = useLocation()
   const hydrate = useAuthStore(s => s.hydrate)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [searchModalOpen, setSearchModalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -48,9 +49,17 @@ export default function AppLayout() {
         mobileOpen={mobileOpen}
         onClose={() => setMobileOpen(false)}
         onOpenCreateOrder={() => setCreateModalOpen(true)}
+        collapsed={navCollapsed}
+        onToggleCollapse={() => setNavCollapsed(c => !c)}
       />
 
-      <div className="flex-1 flex flex-col min-h-screen lg:ml-[var(--nav-width)] w-full min-w-0 transition-all">
+      {/* Margin tracks the sidebar width so collapsing does not leave a gap */}
+      <div
+        className={clsx(
+          'flex-1 flex flex-col min-h-screen w-full min-w-0 transition-[margin] duration-200',
+          navCollapsed ? 'lg:ml-[var(--nav-collapsed-width)]' : 'lg:ml-[var(--nav-width)]'
+        )}
+      >
         <TopBar
           title={title}
           onMenuToggle={() => setMobileOpen(prev => !prev)}
