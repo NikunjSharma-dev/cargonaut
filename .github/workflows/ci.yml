@@ -103,6 +103,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Normalize image namespace
+        # GHCR rejects uppercase repository names; github.repository keeps the
+        # owner's original casing, so lowercase it before tagging.
+        run: echo "IMAGE_NS=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       - name: Log in to container registry
         uses: docker/login-action@v3
         with:
@@ -116,7 +121,7 @@ jobs:
           context: .
           file: infra/Dockerfile.api
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NS }}/api:latest
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
@@ -124,7 +129,7 @@ jobs:
           context: ./frontend
           file: frontend/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NS }}/frontend:latest
 
   # ─── Deploy to AWS ECS ───────────────────────────────────────────────────────
   deploy:
