@@ -3,17 +3,16 @@ Cargonaut — Analytics Endpoints
 Aggregated KPIs for the dashboard. In production these feed Power BI Embedded.
 """
 
-from datetime import datetime, timedelta, timezone, date
+from datetime import datetime, timedelta, timezone
 from typing import List
 
-import pandas as pd
 from fastapi import APIRouter, Depends
+from sqlalchemy import Date, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, cast, Date
 
 from app.core.database import get_db
-from app.core.security import get_current_user, TokenPayload
-from app.models.models import Order, Driver, Vehicle, OrderStatus, VehicleStatus
+from app.core.security import TokenPayload, get_current_user
+from app.models.models import Driver, Order, OrderStatus, Vehicle, VehicleStatus
 from app.schemas.schemas import DashboardStats, OrderStatusBreakdown
 
 router = APIRouter()
@@ -77,13 +76,13 @@ async def get_dashboard_stats(
 
     # Drivers
     total_drivers_r = await db.execute(
-        select(func.count()).where(and_(Driver.tenant_id == tid, Driver.is_active == True))
+        select(func.count()).where(and_(Driver.tenant_id == tid, Driver.is_active.is_(True)))
     )
     total_drivers = total_drivers_r.scalar() or 0
 
     active_drivers_r = await db.execute(
         select(func.count()).where(
-            and_(Driver.tenant_id == tid, Driver.is_active == True, Driver.is_available == False)
+            and_(Driver.tenant_id == tid, Driver.is_active.is_(True), Driver.is_available.is_(False))
         )
     )
     active_drivers = active_drivers_r.scalar() or 0

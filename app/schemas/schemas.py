@@ -3,17 +3,13 @@ Cargonaut — Pydantic Schemas (Request / Response)
 """
 
 from datetime import datetime
-from typing import Optional, List, Any, Dict
-from uuid import UUID
 from decimal import Decimal
+from typing import Any, List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models.models import (
-    UserRole, VehicleStatus, VehicleType, FuelType,
-    OrderStatus, HubType
-)
-
+from app.models.models import FuelType, HubType, OrderStatus, UserRole, VehicleStatus, VehicleType
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 

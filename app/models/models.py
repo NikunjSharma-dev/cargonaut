@@ -15,13 +15,25 @@ from datetime import datetime, timezone
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
-    Column, String, Float, Integer, Boolean, DateTime,
-    ForeignKey, Text, Enum, Index, Numeric, JSON, UUID,
+    JSON,
+    UUID,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
 from sqlalchemy.orm import relationship
-from app.core.config import settings
 
+from app.core.config import settings
+from app.core.database import Base
 
 if "sqlite" in settings.DATABASE_URL:
     def Geometry(*args, **kwargs):
@@ -32,8 +44,6 @@ else:
 
 JSONB = JSON().with_variant(PG_JSONB(), "postgresql")
 
-
-from app.core.database import Base
 
 
 def utcnow():

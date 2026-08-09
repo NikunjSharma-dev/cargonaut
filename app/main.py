@@ -5,16 +5,17 @@ Multi-tenant logistics & supply chain operating system
 
 import traceback
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core.config import settings, get_allowed_origins, get_allowed_hosts
-from app.core.database import engine, Base
 # Must import models before create_all so Base.metadata is populated
 import app.models.models  # noqa: F401
 from app.api.v1.router import api_router
+from app.core.config import get_allowed_hosts, get_allowed_origins, settings
+from app.core.database import Base, engine
 
 
 @asynccontextmanager

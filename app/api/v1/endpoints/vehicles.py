@@ -1,12 +1,12 @@
 """Cargonaut — Vehicles endpoints"""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 
 from app.core.database import get_db
-from app.core.security import get_current_user, TokenPayload
+from app.core.security import TokenPayload, get_current_user
 from app.models.models import Vehicle
-from app.schemas.schemas import VehicleCreate, VehicleUpdate, VehicleResponse
+from app.schemas.schemas import VehicleCreate, VehicleResponse, VehicleUpdate
 
 router = APIRouter()
 

@@ -11,8 +11,9 @@ from typing import Optional
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -63,9 +64,6 @@ class TokenPayload:
         self.tenant_id = tenant_id
         self.email = email
         self.role = role
-
-
-from sqlalchemy import text
 
 
 async def get_current_user(

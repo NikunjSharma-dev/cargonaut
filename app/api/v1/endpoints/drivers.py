@@ -1,12 +1,12 @@
 """Cargonaut — Drivers endpoints"""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 
 from app.core.database import get_db
-from app.core.security import get_current_user, TokenPayload
+from app.core.security import TokenPayload, get_current_user
 from app.models.models import Driver
-from app.schemas.schemas import DriverCreate, DriverUpdate, DriverResponse
+from app.schemas.schemas import DriverCreate, DriverResponse, DriverUpdate
 
 router = APIRouter()
 

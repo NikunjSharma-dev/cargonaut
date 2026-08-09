@@ -4,6 +4,7 @@ Handles heavy async tasks: VRP optimization, ETL jobs, bulk GPS processing.
 """
 
 from celery import Celery
+
 from app.core.config import settings
 
 celery_app = Celery(

@@ -3,13 +3,11 @@ Cargonaut — Celery Tasks
 All heavy computation runs here, never on the HTTP request thread.
 """
 
-import asyncio
 import logging
-from typing import List, Dict
-from uuid import UUID
+from typing import Dict, List
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from app.workers.celery_app import celery_app
 
@@ -43,7 +41,6 @@ def run_vrp_optimization(
     )
 
     try:
-        import math
         import time
 
         start = time.time()
@@ -66,13 +63,6 @@ def run_vrp_optimization(
             "lat": lats,
             "lon": lons,
             "weight_kg": np.random.uniform(1, 50, n_orders),
-        })
-
-        drivers_df = pd.DataFrame({
-            "id": driver_ids,
-            "lat": np.random.uniform(18.5, 19.2, n_drivers),
-            "lon": np.random.uniform(72.8, 73.1, n_drivers),
-            "is_available": [True] * n_drivers,
         })
 
         # Greedy nearest-neighbour assignment

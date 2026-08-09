@@ -4,19 +4,18 @@ PostGIS ST_Contains checks if driver entered delivery geofence.
 WebSocket streams live positions to dispatcher UI.
 """
 
-import json
 import asyncio
+import json
 from datetime import datetime, timezone
 from typing import Dict, Set
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text, and_, update
 
 from app.core.database import get_db
-from app.core.security import get_current_user, TokenPayload
-from app.models.models import Driver, Order, OrderStatus, GPSPing
+from app.core.security import TokenPayload, get_current_user
+from app.models.models import Driver, GPSPing, Order, OrderStatus
 from app.schemas.schemas import GPSPingCreate, GPSPingResponse
 
 router = APIRouter()
@@ -172,7 +171,7 @@ async def get_live_driver_positions(
         select(Driver).where(
             and_(
                 Driver.tenant_id == current_user.tenant_id,
-                Driver.is_active == True,
+                Driver.is_active.is_(True),
                 Driver.current_latitude.isnot(None),
             )
         )

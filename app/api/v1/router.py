@@ -5,8 +5,16 @@ Cargonaut — Unified API Router
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
-    auth, tenants, users, hubs, vehicles,
-    drivers, orders, dispatch, tracking, analytics
+    analytics,
+    auth,
+    dispatch,
+    drivers,
+    hubs,
+    orders,
+    tenants,
+    tracking,
+    users,
+    vehicles,
 )
 
 api_router = APIRouter()

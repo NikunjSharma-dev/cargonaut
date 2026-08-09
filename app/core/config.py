@@ -8,6 +8,7 @@ Use get_allowed_origins() / get_allowed_hosts() helpers wherever a list is neede
 """
 
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings
 
 

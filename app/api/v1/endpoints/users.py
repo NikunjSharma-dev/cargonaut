@@ -1,12 +1,12 @@
 """Cargonaut — Users endpoints"""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 
 from app.core.database import get_db
-from app.core.security import get_current_user, TokenPayload, get_password_hash
+from app.core.security import TokenPayload, get_current_user, get_password_hash
 from app.models.models import User
-from app.schemas.schemas import UserCreate, UserUpdate, UserResponse
+from app.schemas.schemas import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter()
 

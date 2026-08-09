@@ -8,9 +8,10 @@ Solves the Capacitated Vehicle Routing Problem (CVRP) considering:
   - Vectorized Haversine distance & duration matrix (OSRM API ready)
 """
 
-import math
 import logging
-from typing import List, Dict, Any, Tuple
+import math
+from typing import Any, Dict, List
+
 import numpy as np
 import pandas as pd
 
@@ -74,7 +75,6 @@ class CVRPOptimizer:
             }
 
         orders_df = pd.DataFrame(self.orders)
-        drivers_df = pd.DataFrame(self.drivers)
 
         # Sort orders by priority (descending) and weight
         if "priority" in orders_df.columns:

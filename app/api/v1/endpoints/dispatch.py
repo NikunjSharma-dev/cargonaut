@@ -4,23 +4,21 @@ Solves the Vehicle Routing Problem (VRP) using Pandas + Google OR-Tools.
 Heavy computation is offloaded to Celery workers.
 """
 
-import time
 import math
-from typing import List, Optional, Dict
+import time
+from typing import Dict, List
 from uuid import UUID
 
-import pandas as pd
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 
 from app.core.database import get_db
-from app.core.security import get_current_user, TokenPayload
-from app.models.models import Order, Driver, Vehicle, OrderStatus, VehicleStatus
-from app.schemas.schemas import (
-    DispatchOptimizeRequest, DispatchOptimizeResponse, DispatchResult
-)
+from app.core.security import TokenPayload, get_current_user
+from app.models.models import Driver, Order, OrderStatus
+from app.schemas.schemas import DispatchOptimizeRequest, DispatchOptimizeResponse, DispatchResult
 
 router = APIRouter()
 
@@ -125,7 +123,7 @@ async def optimize_dispatch(
     drivers_q = select(Driver).where(
         and_(
             Driver.tenant_id == current_user.tenant_id,
-            Driver.is_active == True,
+            Driver.is_active.is_(True),
         )
     )
     if request.driver_ids:

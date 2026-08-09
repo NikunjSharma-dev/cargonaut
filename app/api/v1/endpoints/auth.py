@@ -2,19 +2,22 @@
 Cargonaut — Authentication Endpoints
 """
 
-import re
 from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import (
-    verify_password, get_password_hash,
-    create_access_token, get_current_user, TokenPayload
+    TokenPayload,
+    create_access_token,
+    get_current_user,
+    get_password_hash,
+    verify_password,
 )
 from app.models.models import Tenant, User, UserRole
-from app.schemas.schemas import LoginRequest, TokenResponse, RegisterTenantRequest
+from app.schemas.schemas import LoginRequest, RegisterTenantRequest, TokenResponse
 
 router = APIRouter()
 
