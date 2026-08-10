@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # CORS & Security — stored as comma-separated strings, never as JSON lists.
     # In docker-compose.yml use:  ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173"
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://app.cargonaut.io"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://app.cargonaut.io,https://nikunjsharma-dev.github.io"
     ALLOWED_HOSTS: str = "*"
 
     # Power BI Embedded (Azure)

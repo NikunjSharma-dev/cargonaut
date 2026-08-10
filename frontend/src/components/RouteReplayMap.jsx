@@ -190,17 +190,22 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
           const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${waypointsStr}?geometries=geojson&overview=full&access_token=${TOKEN}`
           console.log('[RouteReplayMap] Requesting Mapbox Directions API:', url)
           const res = await fetch(url)
-          const data = await res.json()
+          let data = null
+          try {
+            data = await res.json()
+          } catch (jsonErr) {
+            console.error('[RouteReplayMap Error] Failed to parse Mapbox JSON response:', jsonErr)
+          }
 
           if (!res.ok) {
             console.error('[RouteReplayMap Error] Mapbox Directions API HTTP Error:', {
               status: res.status,
               statusText: res.statusText,
               message: data?.message || data?.code || 'Unknown error',
-              data,
+              responseBody: data,
               url,
             })
-          } else if (data.routes && data.routes[0]?.geometry?.coordinates) {
+          } else if (data?.routes && data.routes[0]?.geometry?.coordinates) {
             const geom = data.routes[0].geometry.coordinates
             console.log('[RouteReplayMap Success] Mapbox Directions geometry loaded with', geom.length, 'points')
             if (isMounted) {
@@ -217,7 +222,7 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
           console.error('[RouteReplayMap Exception] Direct Mapbox Directions fetch threw exception:', err)
         }
       } else {
-        console.warn('[RouteReplayMap Warning] VITE_MAPBOX_TOKEN is empty! Skipping direct Mapbox Directions API call.')
+        console.warn('[RouteReplayMap Warning] VITE_MAPBOX_TOKEN is empty/undefined! Skipping direct Mapbox Directions API call.')
       }
 
       // 2. Try FastAPI backend proxy endpoint
@@ -243,8 +248,9 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
         console.error('[RouteReplayMap Error] Backend proxy fetch failed:', {
           status: e.response?.status,
           statusText: e.response?.statusText,
-          data: e.response?.data,
+          responseBody: e.response?.data,
           message: e.message,
+          errorObject: e,
         })
       }
 

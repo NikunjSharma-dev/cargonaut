@@ -9,10 +9,12 @@ cargo's handling requirements.
 """
 
 import math
+import os
 import time
 from typing import Callable, Dict, List, Optional, Set
 from uuid import UUID
 
+import httpx
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
@@ -451,9 +453,6 @@ async def get_route_geometry(
     Proxy endpoint for Mapbox Directions API.
     Returns GeoJSON LineString coordinates snapped to real roads for fleet transport.
     """
-    import os
-    import httpx
-
     token = os.getenv("MAPBOX_TOKEN") or os.getenv("VITE_MAPBOX_TOKEN", "")
     if not token:
         return {"type": "LineString", "coordinates": []}
