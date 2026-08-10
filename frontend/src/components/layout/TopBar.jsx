@@ -51,11 +51,9 @@ export default function TopBar({ title, onMenuToggle, onOpenSearch }) {
       <div className="flex items-center gap-2 sm:gap-3">
         {isDemo && (
           <span
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold
-                       border border-amber-200 bg-amber-50 text-amber-700"
-            title="Signed in with a placeholder session. Sign in with a real account to save changes."
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-500/30 bg-amber-500/10 text-amber-400"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
             Demo mode
           </span>
         )}

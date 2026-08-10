@@ -508,7 +508,7 @@ export default function OrdersPage() {
                     <td className="table-cell">
                       <CargoBadge type={order.cargo_type || 'general'} />
                       {order.hazmat_un_code && (
-                        <span className="text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1 rounded block mt-0.5 w-max font-mono">
+                        <span className="text-[9px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded block mt-0.5 w-max font-mono">
                           {order.hazmat_un_code}
                         </span>
                       )}
