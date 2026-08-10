@@ -70,6 +70,17 @@ api.interceptors.response.use(
     }
 
     if (err.response?.status === 401) {
+      const raw = localStorage.getItem('cargonaut-auth')
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw)
+          if (!parsed?.state?.token || parsed?.state?.token === 'demo-token-cargonaut-2026') {
+            import('../store/authStore').then(({ useAuthStore }) => {
+              useAuthStore.getState().guestLogin()
+            }).catch(() => {})
+          }
+        } catch (_) {}
+      }
       err.response.data = {
         detail: err.response.data?.detail || 'Not authenticated — sign in again to continue.',
       }

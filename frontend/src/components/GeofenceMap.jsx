@@ -33,6 +33,59 @@ const STYLE_FOR = {
   light: 'mapbox://styles/mapbox/light-v11',
 }
 
+const CARTO_STYLE = {
+  dark: {
+    version: 8,
+    sources: {
+      'carto-dark': {
+        type: 'raster',
+        tiles: [
+          'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+          'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+          'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+          'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+        ],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+      },
+    },
+    layers: [
+      {
+        id: 'carto-dark-layer',
+        type: 'raster',
+        source: 'carto-dark',
+        minzoom: 0,
+        maxzoom: 22,
+      },
+    ],
+  },
+  light: {
+    version: 8,
+    sources: {
+      'carto-light': {
+        type: 'raster',
+        tiles: [
+          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
+          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
+          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
+          'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
+        ],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+      },
+    },
+    layers: [
+      {
+        id: 'carto-light-layer',
+        type: 'raster',
+        source: 'carto-light',
+        minzoom: 0,
+        maxzoom: 22,
+      },
+    ],
+  },
+}
+
 const EMPTY_FC = { type: 'FeatureCollection', features: [] }
 
 function polygonFeature(ring, properties = {}) {
@@ -101,12 +154,18 @@ export default function GeofenceMap({
 
   // ── Create the map once ────────────────────────────────────────────────────
   useEffect(() => {
-    if (!TOKEN || !containerRef.current || mapRef.current) return undefined
+    if (!containerRef.current || mapRef.current) return undefined
 
-    mapboxgl.accessToken = TOKEN
+    let isUsingCarto = !TOKEN
+    if (TOKEN) {
+      mapboxgl.accessToken = TOKEN
+    }
+
+    const initialStyle = isUsingCarto ? (CARTO_STYLE[resolved] || CARTO_STYLE.dark) : STYLE_FOR[resolved]
+
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: STYLE_FOR[resolved],
+      style: initialStyle,
       center: [72.8777, 19.076],
       zoom: 10,
       attributionControl: false,
@@ -116,6 +175,15 @@ export default function GeofenceMap({
     map.on('style.load', () => setStyleTick(t => t + 1))
     map.on('click', e => clickRef.current?.([e.lngLat.lng, e.lngLat.lat]))
     styleKeyRef.current = resolved
+
+    map.on('error', (e) => {
+      const msg = e?.error?.message || e?.message || ''
+      const status = e?.error?.status || e?.status
+      if (!isUsingCarto && (status === 401 || msg.includes('Token') || msg.includes('Not Authorized') || msg.includes('401'))) {
+        isUsingCarto = true
+        map.setStyle(CARTO_STYLE[resolved] || CARTO_STYLE.dark)
+      }
+    })
 
     mapRef.current = map
     return () => { map.remove(); mapRef.current = null }
