@@ -144,6 +144,15 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     }
   }, [styleTick])
 
+  // Diagnostic log for token status on component mount
+  useEffect(() => {
+    console.info('[RouteReplayMap Init] Token Status:', {
+      hasToken: Boolean(TOKEN),
+      tokenLength: TOKEN ? TOKEN.length : 0,
+      tokenPrefix: TOKEN ? TOKEN.substring(0, 8) : 'NONE',
+    })
+  }, [])
+
   // Fetch true driving route geometry from Mapbox Directions API (with caching & fallback)
   useEffect(() => {
     if (isAir || coords.length < 2) {
@@ -179,10 +188,21 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
       if (TOKEN) {
         try {
           const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${waypointsStr}?geometries=geojson&overview=full&access_token=${TOKEN}`
+          console.log('[RouteReplayMap] Requesting Mapbox Directions API:', url)
           const res = await fetch(url)
           const data = await res.json()
-          if (data.routes && data.routes[0]?.geometry?.coordinates) {
+
+          if (!res.ok) {
+            console.error('[RouteReplayMap Error] Mapbox Directions API HTTP Error:', {
+              status: res.status,
+              statusText: res.statusText,
+              message: data?.message || data?.code || 'Unknown error',
+              data,
+              url,
+            })
+          } else if (data.routes && data.routes[0]?.geometry?.coordinates) {
             const geom = data.routes[0].geometry.coordinates
+            console.log('[RouteReplayMap Success] Mapbox Directions geometry loaded with', geom.length, 'points')
             if (isMounted) {
               setRoadGeometry(geom)
               setIsFallback(false)
@@ -190,19 +210,25 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
               routeCacheRef.current.set(cacheKey, { geometry: geom, isFallback: false })
             }
             return
+          } else {
+            console.warn('[RouteReplayMap Warning] Mapbox Directions returned no routes:', data)
           }
-        } catch (e) {
-          // Direct fetch failed, fallback to backend proxy
+        } catch (err) {
+          console.error('[RouteReplayMap Exception] Direct Mapbox Directions fetch threw exception:', err)
         }
+      } else {
+        console.warn('[RouteReplayMap Warning] VITE_MAPBOX_TOKEN is empty! Skipping direct Mapbox Directions API call.')
       }
 
       // 2. Try FastAPI backend proxy endpoint
       try {
+        console.log('[RouteReplayMap] Requesting backend proxy /dispatch/route-geometry...')
         const res = await api.get('/dispatch/route-geometry', {
           params: { waypoints: waypointsStr, profile, overview: 'full' },
         })
         if (res.data?.coordinates && res.data.coordinates.length > 0) {
           const geom = res.data.coordinates
+          console.log('[RouteReplayMap Success] Backend proxy geometry loaded with', geom.length, 'points')
           if (isMounted) {
             setRoadGeometry(geom)
             setIsFallback(false)
@@ -210,12 +236,20 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
             routeCacheRef.current.set(cacheKey, { geometry: geom, isFallback: false })
           }
           return
+        } else {
+          console.warn('[RouteReplayMap Warning] Backend proxy returned empty geometry:', res.data)
         }
       } catch (e) {
-        // Proxy fetch failed
+        console.error('[RouteReplayMap Error] Backend proxy fetch failed:', {
+          status: e.response?.status,
+          statusText: e.response?.statusText,
+          data: e.response?.data,
+          message: e.message,
+        })
       }
 
       // 3. Fallback to straight line with dashed styling
+      console.warn('[RouteReplayMap Fallback] Triggering straight-line fallback rendering.')
       if (isMounted) {
         setRoadGeometry(null)
         setIsFallback(true)
