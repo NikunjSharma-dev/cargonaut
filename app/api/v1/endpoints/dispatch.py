@@ -450,23 +450,34 @@ async def get_route_geometry(
     overview: str = "full",
 ):
     """
-    Proxy endpoint for Mapbox Directions API.
-    Returns GeoJSON LineString coordinates snapped to real roads for fleet transport.
+    Proxy endpoint for road routing geometry.
+    Tries Mapbox Directions API, falling back to OSRM (Open Source Routing Machine)
+    to return GeoJSON LineString coordinates snapped to real roads.
     """
     token = os.getenv("MAPBOX_TOKEN") or os.getenv("VITE_MAPBOX_TOKEN", "")
-    if not token:
-        return {"type": "LineString", "coordinates": []}
+    if token:
+        url = f"https://api.mapbox.com/directions/v5/mapbox/{profile}/{waypoints}"
+        params = {
+            "geometries": "geojson",
+            "overview": overview,
+            "access_token": token,
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, params=params, timeout=4.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("routes") and len(data["routes"]) > 0:
+                        return data["routes"][0]["geometry"]
+        except Exception:
+            pass
 
-    url = f"https://api.mapbox.com/directions/v5/mapbox/{profile}/{waypoints}"
-    params = {
-        "geometries": "geojson",
-        "overview": overview,
-        "access_token": token,
-    }
-
+    # Fallback to free public OSRM road routing API
+    osrm_prof = "driving" if profile in ["driving", "driving-traffic"] else profile
+    osrm_url = f"https://router.project-osrm.org/route/v1/{osrm_prof}/{waypoints}?overview=full&geometries=geojson"
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, params=params, timeout=5.0)
+            resp = await client.get(osrm_url, timeout=5.0)
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("routes") and len(data["routes"]) > 0:

@@ -5,15 +5,6 @@ import { MapPinOff, Loader2, AlertCircle } from 'lucide-react'
 import { useResolvedTheme } from '../store/themeStore'
 import api from '../utils/api'
 
-/**
- * Mapbox GL breadcrumb map for vehicle route replay.
- *
- * Draws the full trail faded, the portion already replayed in the mode accent,
- * and a marker at `cursor`. The parent owns `cursor` so the scrubber, the
- * travelled line and the marker are always driven by the same index — they
- * cannot drift apart.
- */
-
 const TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
 const SRC_TRAIL = 'replay-trail'
@@ -111,6 +102,7 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
   const mapRef = useRef(null)
   const markerRef = useRef(null)
   const styleKeyRef = useRef(null)
+  const isCartoRef = useRef(!TOKEN)
   const routeCacheRef = useRef(new Map())
   const [styleTick, setStyleTick] = useState(0)
   const [isFetchingRoute, setIsFetchingRoute] = useState(false)
@@ -120,8 +112,6 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
   const resolved = useResolvedTheme()
   const accent = isAir ? ACCENT.air : ACCENT.road
 
-  // Mapbox wants [lon, lat]; the API returns lat/lon named fields. Derived once
-  // per trail so a playback tick never re-maps the whole array.
   const coords = useMemo(
     () => points.map(p => [p.longitude, p.latitude]),
     [points],
@@ -131,12 +121,11 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return undefined
 
-    let isUsingCarto = !TOKEN
-    if (TOKEN) {
+    if (TOKEN && !isCartoRef.current) {
       mapboxgl.accessToken = TOKEN
     }
 
-    const initialStyle = isUsingCarto ? (CARTO_STYLE[resolved] || CARTO_STYLE.dark) : STYLE_FOR[resolved]
+    const initialStyle = isCartoRef.current ? (CARTO_STYLE[resolved] || CARTO_STYLE.dark) : STYLE_FOR[resolved]
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -155,8 +144,8 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     map.on('error', (e) => {
       const msg = e?.error?.message || e?.message || ''
       const status = e?.error?.status || e?.status
-      if (!isUsingCarto && (status === 401 || msg.includes('Token') || msg.includes('Not Authorized') || msg.includes('401'))) {
-        isUsingCarto = true
+      if (!isCartoRef.current && (status === 401 || msg.includes('Token') || msg.includes('Not Authorized') || msg.includes('401'))) {
+        isCartoRef.current = true
         map.setStyle(CARTO_STYLE[resolved] || CARTO_STYLE.dark)
       }
     })
@@ -175,7 +164,11 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     const map = mapRef.current
     if (!map || styleKeyRef.current === resolved) return
     styleKeyRef.current = resolved
-    map.setStyle(STYLE_FOR[resolved])
+    if (isCartoRef.current || !TOKEN) {
+      map.setStyle(CARTO_STYLE[resolved] || CARTO_STYLE.dark)
+    } else {
+      map.setStyle(STYLE_FOR[resolved])
+    }
   }, [resolved])
 
   // ── Create sources and layers (once per style load) ────────────────────────
@@ -212,16 +205,7 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     }
   }, [styleTick])
 
-  // Diagnostic log for token status on component mount
-  useEffect(() => {
-    console.info('[RouteReplayMap Init] Token Status:', {
-      hasToken: Boolean(TOKEN),
-      tokenLength: TOKEN ? TOKEN.length : 0,
-      tokenPrefix: TOKEN ? TOKEN.substring(0, 8) : 'NONE',
-    })
-  }, [])
-
-  // Fetch true driving route geometry from Mapbox Directions API (with caching & fallback)
+  // Fetch true driving route geometry from Mapbox / Backend / OSRM API
   useEffect(() => {
     if (isAir || coords.length < 2) {
       setRoadGeometry(null)
@@ -230,7 +214,6 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
       return
     }
 
-    // Limit to max 25 waypoints per Mapbox Directions API limits
     const waypointsToUse = coords.length > 25
       ? coords.filter((_, idx) => idx % Math.ceil(coords.length / 25) === 0 || idx === coords.length - 1)
       : coords
@@ -238,7 +221,6 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     const waypointsStr = waypointsToUse.map(c => `${c[0]},${c[1]}`).join(';')
     const cacheKey = `${profile}-${waypointsStr}`
 
-    // Check memory cache first
     if (routeCacheRef.current.has(cacheKey)) {
       const cached = routeCacheRef.current.get(cacheKey)
       setRoadGeometry(cached.geometry)
@@ -252,56 +234,34 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     setIsFallback(false)
 
     async function fetchDirections() {
-      // 1. Try Mapbox Directions API directly
-      if (TOKEN) {
+      // 1. Direct Mapbox call if TOKEN exists
+      if (TOKEN && !isCartoRef.current) {
         try {
           const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${waypointsStr}?geometries=geojson&overview=full&access_token=${TOKEN}`
-          console.log('[RouteReplayMap] Requesting Mapbox Directions API:', url)
           const res = await fetch(url)
-          let data = null
-          try {
-            data = await res.json()
-          } catch (jsonErr) {
-            console.error('[RouteReplayMap Error] Failed to parse Mapbox JSON response:', jsonErr)
-          }
-
-          if (!res.ok) {
-            console.error('[RouteReplayMap Error] Mapbox Directions API HTTP Error:', {
-              status: res.status,
-              statusText: res.statusText,
-              message: data?.message || data?.code || 'Unknown error',
-              responseBody: data,
-              url,
-            })
-          } else if (data?.routes && data.routes[0]?.geometry?.coordinates) {
-            const geom = data.routes[0].geometry.coordinates
-            console.log('[RouteReplayMap Success] Mapbox Directions geometry loaded with', geom.length, 'points')
-            if (isMounted) {
-              setRoadGeometry(geom)
-              setIsFallback(false)
-              setIsFetchingRoute(false)
-              routeCacheRef.current.set(cacheKey, { geometry: geom, isFallback: false })
+          if (res.ok) {
+            const data = await res.json()
+            if (data?.routes && data.routes[0]?.geometry?.coordinates) {
+              const geom = data.routes[0].geometry.coordinates
+              if (isMounted) {
+                setRoadGeometry(geom)
+                setIsFallback(false)
+                setIsFetchingRoute(false)
+                routeCacheRef.current.set(cacheKey, { geometry: geom, isFallback: false })
+              }
+              return
             }
-            return
-          } else {
-            console.warn('[RouteReplayMap Warning] Mapbox Directions returned no routes:', data)
           }
-        } catch (err) {
-          console.error('[RouteReplayMap Exception] Direct Mapbox Directions fetch threw exception:', err)
-        }
-      } else {
-        console.warn('[RouteReplayMap Warning] VITE_MAPBOX_TOKEN is empty/undefined! Skipping direct Mapbox Directions API call.')
+        } catch (_) {}
       }
 
-      // 2. Try FastAPI backend proxy endpoint
+      // 2. FastAPI backend proxy endpoint (which has OSRM fallback)
       try {
-        console.log('[RouteReplayMap] Requesting backend proxy /dispatch/route-geometry...')
         const res = await api.get('/dispatch/route-geometry', {
           params: { waypoints: waypointsStr, profile, overview: 'full' },
         })
         if (res.data?.coordinates && res.data.coordinates.length > 0) {
           const geom = res.data.coordinates
-          console.log('[RouteReplayMap Success] Backend proxy geometry loaded with', geom.length, 'points')
           if (isMounted) {
             setRoadGeometry(geom)
             setIsFallback(false)
@@ -309,21 +269,30 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
             routeCacheRef.current.set(cacheKey, { geometry: geom, isFallback: false })
           }
           return
-        } else {
-          console.warn('[RouteReplayMap Warning] Backend proxy returned empty geometry:', res.data)
         }
-      } catch (e) {
-        console.error('[RouteReplayMap Error] Backend proxy fetch failed:', {
-          status: e.response?.status,
-          statusText: e.response?.statusText,
-          responseBody: e.response?.data,
-          message: e.message,
-          errorObject: e,
-        })
-      }
+      } catch (_) {}
 
-      // 3. Fallback to straight line with dashed styling
-      console.warn('[RouteReplayMap Fallback] Triggering straight-line fallback rendering.')
+      // 3. Free public OSRM road routing API direct call
+      try {
+        const osrmProf = profile === 'driving' ? 'driving' : 'driving'
+        const osrmUrl = `https://router.project-osrm.org/route/v1/${osrmProf}/${waypointsStr}?overview=full&geometries=geojson`
+        const res = await fetch(osrmUrl)
+        if (res.ok) {
+          const data = await res.json()
+          if (data?.routes && data.routes[0]?.geometry?.coordinates) {
+            const geom = data.routes[0].geometry.coordinates
+            if (isMounted) {
+              setRoadGeometry(geom)
+              setIsFallback(false)
+              setIsFetchingRoute(false)
+              routeCacheRef.current.set(cacheKey, { geometry: geom, isFallback: false })
+            }
+            return
+          }
+        }
+      } catch (_) {}
+
+      // 4. Straight line fallback
       if (isMounted) {
         setRoadGeometry(null)
         setIsFallback(true)
@@ -352,7 +321,6 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     map.setPaintProperty(
       LYR_ENDS, 'circle-color', resolved === 'dark' ? '#11131a' : '#ffffff',
     )
-    // Dashed for air OR straight-line fallback
     map.setPaintProperty(LYR_TRAIL, 'line-dasharray', (isAir || isFallback) ? [3, 3] : [1])
 
     if (markerRef.current) {
@@ -404,21 +372,6 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
       markerRef.current.setLngLat(activeCoords[head])
     }
   }, [activeCoords, coords, cursor, accent, styleTick])
-
-  if (!TOKEN) {
-    return (
-      <div
-        className={`flex flex-col items-center justify-center gap-2 bg-app-panel text-center px-6 ${className || ''}`}
-      >
-        <MapPinOff size={22} className="text-muted" />
-        <p className="text-[13px] font-semibold text-heading">Map unavailable</p>
-        <p className="text-[12px] text-muted max-w-xs">
-          Set <code className="font-mono">VITE_MAPBOX_TOKEN</code> in your frontend environment to
-          render the route replay.
-        </p>
-      </div>
-    )
-  }
 
   return (
     <div className={`relative ${className || ''}`}>

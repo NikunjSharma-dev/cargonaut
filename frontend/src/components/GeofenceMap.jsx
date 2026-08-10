@@ -5,15 +5,6 @@ import { MapPinOff } from 'lucide-react'
 import { useResolvedTheme } from '../store/themeStore'
 import { circleToRing } from '../utils/geofence'
 
-/**
- * Mapbox map that renders saved geofences and captures a new one.
- *
- * Drawing is deliberately click-based rather than pulling in mapbox-gl-draw:
- * two shapes need two gestures, and the library is larger than the feature.
- *   circle  — click once to drop the centre, then size it with the radius input
- *   polygon — click each vertex, then Finish
- */
-
 const TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
 const SRC_SAVED = 'fences-saved'
@@ -106,12 +97,11 @@ export default function GeofenceMap({
   const mapRef = useRef(null)
   const clickRef = useRef(onMapClick)
   const styleKeyRef = useRef(null)
+  const isCartoRef = useRef(!TOKEN)
   const [styleTick, setStyleTick] = useState(0)
 
   const resolved = useResolvedTheme()
 
-  // The click handler is registered once but must always call the latest
-  // closure — drawMode and draft state change on every interaction.
   useEffect(() => { clickRef.current = onMapClick }, [onMapClick])
 
   const savedCollection = useMemo(() => ({
@@ -156,12 +146,11 @@ export default function GeofenceMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return undefined
 
-    let isUsingCarto = !TOKEN
-    if (TOKEN) {
+    if (TOKEN && !isCartoRef.current) {
       mapboxgl.accessToken = TOKEN
     }
 
-    const initialStyle = isUsingCarto ? (CARTO_STYLE[resolved] || CARTO_STYLE.dark) : STYLE_FOR[resolved]
+    const initialStyle = isCartoRef.current ? (CARTO_STYLE[resolved] || CARTO_STYLE.dark) : STYLE_FOR[resolved]
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -179,8 +168,8 @@ export default function GeofenceMap({
     map.on('error', (e) => {
       const msg = e?.error?.message || e?.message || ''
       const status = e?.error?.status || e?.status
-      if (!isUsingCarto && (status === 401 || msg.includes('Token') || msg.includes('Not Authorized') || msg.includes('401'))) {
-        isUsingCarto = true
+      if (!isCartoRef.current && (status === 401 || msg.includes('Token') || msg.includes('Not Authorized') || msg.includes('401'))) {
+        isCartoRef.current = true
         map.setStyle(CARTO_STYLE[resolved] || CARTO_STYLE.dark)
       }
     })
@@ -195,12 +184,14 @@ export default function GeofenceMap({
     const map = mapRef.current
     if (!map || styleKeyRef.current === resolved) return
     styleKeyRef.current = resolved
-    map.setStyle(STYLE_FOR[resolved])
+    if (isCartoRef.current || !TOKEN) {
+      map.setStyle(CARTO_STYLE[resolved] || CARTO_STYLE.dark)
+    } else {
+      map.setStyle(STYLE_FOR[resolved])
+    }
   }, [resolved])
 
   // ── Create sources and layers (once per style load) ────────────────────────
-  // See RouteReplayMap: isStyleLoaded() is false until every tile lands, so
-  // guarding on it here would leave the map permanently empty.
   useEffect(() => {
     const map = mapRef.current
     if (!map || styleTick === 0) return
@@ -295,18 +286,6 @@ export default function GeofenceMap({
     const canvas = mapRef.current?.getCanvas()
     if (canvas) canvas.style.cursor = drawMode ? 'crosshair' : ''
   }, [drawMode, styleTick])
-
-  if (!TOKEN) {
-    return (
-      <div className={`flex flex-col items-center justify-center gap-2 bg-app-panel text-center px-6 ${className || ''}`}>
-        <MapPinOff size={22} className="text-muted" />
-        <p className="text-[13px] font-semibold text-heading">Map unavailable</p>
-        <p className="text-[12px] text-muted max-w-xs">
-          Set <code className="font-mono">VITE_MAPBOX_TOKEN</code> to draw and view geofences.
-        </p>
-      </div>
-    )
-  }
 
   return <div ref={containerRef} className={className} />
 }
