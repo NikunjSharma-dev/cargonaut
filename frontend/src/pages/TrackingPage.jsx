@@ -435,7 +435,7 @@ export default function TrackingPage() {
                   onClick={() => setModeFilter(opt.key)}
                   className={clsx('mode-tab', active && 'active')}
                 >
-                  {Icon && <Icon size={15} strokeWidth={active ? 2.6 : 2} />}
+                  {Icon && <Icon size={14} strokeWidth={active ? 2.4 : 2} className="flex-shrink-0" />}
                   <span>{opt.label}</span>
                   <span className="chip-count">{String(opt.count).padStart(2, '0')}</span>
                 </button>
