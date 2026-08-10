@@ -23,6 +23,7 @@ pydantic-settings==2.6.1
 pandas==2.2.3
 numpy==2.1.3
 scipy==1.14.1
+joblib==1.4.2
 pulp==2.9.0
 # ortools==9.11.4210  # Google OR-Tools (optional, heavy)
 
