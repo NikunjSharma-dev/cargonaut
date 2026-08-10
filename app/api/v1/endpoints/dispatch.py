@@ -441,3 +441,41 @@ async def dispatch_assistant_chat(
     return AssistantChatResponse(**res)
 
 
+@router.get("/route-geometry")
+async def get_route_geometry(
+    waypoints: str,
+    profile: str = "driving",
+    overview: str = "full",
+):
+    """
+    Proxy endpoint for Mapbox Directions API.
+    Returns GeoJSON LineString coordinates snapped to real roads for fleet transport.
+    """
+    import os
+    import httpx
+
+    token = os.getenv("MAPBOX_TOKEN") or os.getenv("VITE_MAPBOX_TOKEN", "")
+    if not token:
+        return {"type": "LineString", "coordinates": []}
+
+    url = f"https://api.mapbox.com/directions/v5/mapbox/{profile}/{waypoints}"
+    params = {
+        "geometries": "geojson",
+        "overview": overview,
+        "access_token": token,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, params=params, timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("routes") and len(data["routes"]) > 0:
+                    return data["routes"][0]["geometry"]
+    except Exception:
+        pass
+
+    return {"type": "LineString", "coordinates": []}
+
+
+

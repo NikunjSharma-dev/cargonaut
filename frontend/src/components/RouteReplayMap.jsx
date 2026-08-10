@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { MapPinOff } from 'lucide-react'
+import { MapPinOff, Loader2, AlertCircle } from 'lucide-react'
 import { useResolvedTheme } from '../store/themeStore'
+import api from '../utils/api'
 
 /**
  * Mapbox GL breadcrumb map for vehicle route replay.
@@ -52,12 +53,16 @@ function markerElement() {
   return el
 }
 
-export default function RouteReplayMap({ points = [], cursor = 0, isAir = false, className }) {
+export default function RouteReplayMap({ points = [], cursor = 0, isAir = false, profile = 'driving', className }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const markerRef = useRef(null)
   const styleKeyRef = useRef(null)
+  const routeCacheRef = useRef(new Map())
   const [styleTick, setStyleTick] = useState(0)
+  const [isFetchingRoute, setIsFetchingRoute] = useState(false)
+  const [isFallback, setIsFallback] = useState(false)
+  const [roadGeometry, setRoadGeometry] = useState(null)
 
   const resolved = useResolvedTheme()
   const accent = isAir ? ACCENT.air : ACCENT.road
@@ -79,7 +84,6 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
       style: STYLE_FOR[resolved],
       center: [72.8777, 19.076],
       zoom: 10,
-      // Mapbox requires visible attribution; compact keeps it out of the way
       attributionControl: false,
     })
     map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right')
@@ -87,7 +91,6 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     map.scrollZoom.disable()
     styleKeyRef.current = resolved
 
-    // Fires on first load and again after every setStyle, which wipes layers.
     map.on('style.load', () => setStyleTick(t => t + 1))
 
     mapRef.current = map
@@ -97,26 +100,17 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
       map.remove()
       mapRef.current = null
     }
-    // Theme and data are handled by their own effects; this must run once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Follow the app theme ───────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current
-    // The map is built with the current theme's style, so only a later flip
-    // needs setStyle — calling it on mount would discard the initial load.
     if (!map || styleKeyRef.current === resolved) return
     styleKeyRef.current = resolved
     map.setStyle(STYLE_FOR[resolved])
   }, [resolved])
 
   // ── Create sources and layers (once per style load) ────────────────────────
-  // Gated on styleTick, which only advances from the `style.load` handler —
-  // at that point addSource/addLayer are safe. Deliberately NOT gated on
-  // isStyleLoaded(): that reports false until every basemap tile has finished
-  // downloading, so it is false at style.load and this effect would never run
-  // again, leaving the map an empty basemap.
   useEffect(() => {
     const map = mapRef.current
     if (!map || styleTick === 0) return
@@ -150,9 +144,96 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     }
   }, [styleTick])
 
-  // ── Keep paint in step with mode and theme ─────────────────────────────────
-  // Separate from creation: selecting a different vehicle changes `accent` and
-  // `isAir` without remounting, so colours set at creation time would stick.
+  // Fetch true driving route geometry from Mapbox Directions API (with caching & fallback)
+  useEffect(() => {
+    if (isAir || coords.length < 2) {
+      setRoadGeometry(null)
+      setIsFallback(false)
+      setIsFetchingRoute(false)
+      return
+    }
+
+    // Limit to max 25 waypoints per Mapbox Directions API limits
+    const waypointsToUse = coords.length > 25
+      ? coords.filter((_, idx) => idx % Math.ceil(coords.length / 25) === 0 || idx === coords.length - 1)
+      : coords
+
+    const waypointsStr = waypointsToUse.map(c => `${c[0]},${c[1]}`).join(';')
+    const cacheKey = `${profile}-${waypointsStr}`
+
+    // Check memory cache first
+    if (routeCacheRef.current.has(cacheKey)) {
+      const cached = routeCacheRef.current.get(cacheKey)
+      setRoadGeometry(cached.geometry)
+      setIsFallback(cached.isFallback)
+      setIsFetchingRoute(false)
+      return
+    }
+
+    let isMounted = true
+    setIsFetchingRoute(true)
+    setIsFallback(false)
+
+    async function fetchDirections() {
+      // 1. Try Mapbox Directions API directly
+      if (TOKEN) {
+        try {
+          const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${waypointsStr}?geometries=geojson&overview=full&access_token=${TOKEN}`
+          const res = await fetch(url)
+          const data = await res.json()
+          if (data.routes && data.routes[0]?.geometry?.coordinates) {
+            const geom = data.routes[0].geometry.coordinates
+            if (isMounted) {
+              setRoadGeometry(geom)
+              setIsFallback(false)
+              setIsFetchingRoute(false)
+              routeCacheRef.current.set(cacheKey, { geometry: geom, isFallback: false })
+            }
+            return
+          }
+        } catch (e) {
+          // Direct fetch failed, fallback to backend proxy
+        }
+      }
+
+      // 2. Try FastAPI backend proxy endpoint
+      try {
+        const res = await api.get('/dispatch/route-geometry', {
+          params: { waypoints: waypointsStr, profile, overview: 'full' },
+        })
+        if (res.data?.coordinates && res.data.coordinates.length > 0) {
+          const geom = res.data.coordinates
+          if (isMounted) {
+            setRoadGeometry(geom)
+            setIsFallback(false)
+            setIsFetchingRoute(false)
+            routeCacheRef.current.set(cacheKey, { geometry: geom, isFallback: false })
+          }
+          return
+        }
+      } catch (e) {
+        // Proxy fetch failed
+      }
+
+      // 3. Fallback to straight line with dashed styling
+      if (isMounted) {
+        setRoadGeometry(null)
+        setIsFallback(true)
+        setIsFetchingRoute(false)
+        routeCacheRef.current.set(cacheKey, { geometry: null, isFallback: true })
+      }
+    }
+
+    fetchDirections()
+
+    return () => {
+      isMounted = false
+    }
+  }, [coords, isAir, profile])
+
+  const activeCoords = (!isAir && roadGeometry && roadGeometry.length > 0) ? roadGeometry : coords
+
+  // ── Keep paint in step with mode, theme & fallback state ────────────────────
   useEffect(() => {
     const map = mapRef.current
     if (!map || !map.getLayer(LYR_TRAIL)) return
@@ -163,49 +244,13 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     map.setPaintProperty(
       LYR_ENDS, 'circle-color', resolved === 'dark' ? '#11131a' : '#ffffff',
     )
-    // An air leg is a planned track, not a road — dashed reads as such
-    map.setPaintProperty(LYR_TRAIL, 'line-dasharray', isAir ? [2, 2] : [1])
+    // Dashed for air OR straight-line fallback
+    map.setPaintProperty(LYR_TRAIL, 'line-dasharray', (isAir || isFallback) ? [3, 3] : [1])
 
     if (markerRef.current) {
       markerRef.current.getElement().style.background = accent
     }
-  }, [styleTick, accent, isAir, resolved])
-
-  const [roadGeometry, setRoadGeometry] = useState(null)
-
-  // Fetch true driving route geometry from Mapbox Directions API for road transport
-  useEffect(() => {
-    if (isAir || !TOKEN || coords.length < 2) {
-      setRoadGeometry(null)
-      return
-    }
-
-    const waypointsToUse = coords.length > 25
-      ? coords.filter((_, idx) => idx % Math.ceil(coords.length / 25) === 0 || idx === coords.length - 1)
-      : coords
-
-    const waypoints = waypointsToUse.map(c => `${c[0]},${c[1]}`).join(';')
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${waypoints}?geometries=geojson&overview=full&access_token=${TOKEN}`
-
-    let isMounted = true
-    fetch(url)
-      .then(res => res.json())
-      .then(data => {
-        if (!isMounted) return
-        if (data.routes && data.routes[0]?.geometry?.coordinates) {
-          setRoadGeometry(data.routes[0].geometry.coordinates)
-        }
-      })
-      .catch(() => {
-        if (isMounted) setRoadGeometry(null)
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [coords, isAir])
-
-  const activeCoords = (!isAir && roadGeometry && roadGeometry.length > 0) ? roadGeometry : coords
+  }, [styleTick, accent, isAir, isFallback, resolved])
 
   // ── Push the trail in ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -234,7 +279,6 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     const ratio = coords.length > 1 ? cursor / (coords.length - 1) : 0
     const head = Math.min(Math.round(ratio * (activeCoords.length - 1)), activeCoords.length - 1)
 
-    // slice is exclusive, so +1 includes the point under the scrubber
     map.getSource(SRC_TRAVELLED).setData(lineFeature(activeCoords.slice(0, head + 1)))
 
     if (head < 0 || activeCoords.length === 0) {
@@ -268,5 +312,21 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     )
   }
 
-  return <div ref={containerRef} className={className} />
+  return (
+    <div className={`relative ${className || ''}`}>
+      <div ref={containerRef} className="w-full h-full" />
+      {isFetchingRoute && !isAir && (
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full bg-app-surface/90 border border-app-border backdrop-blur shadow-md text-xs font-semibold text-heading animate-pulse">
+          <Loader2 size={13} className="animate-spin text-primary" />
+          <span>Snapping to roads...</span>
+        </div>
+      )}
+      {isFallback && !isAir && (
+        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-app-surface/90 border border-app-border backdrop-blur text-[11px] font-medium text-subtle shadow-xs">
+          <AlertCircle size={12} className="text-amber-400" />
+          <span>Dashed straight-line fallback</span>
+        </div>
+      )}
+    </div>
+  )
 }
