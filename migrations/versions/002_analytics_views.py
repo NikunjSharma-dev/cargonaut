@@ -25,10 +25,10 @@ def upgrade() -> None:
             d.full_name,
             d.phone,
             COUNT(o.id) AS total_assigned_orders,
-            COUNT(CASE WHEN o.status = 'delivered' THEN 1 END) AS delivered_orders,
-            COUNT(CASE WHEN o.status = 'failed' THEN 1 END) AS failed_orders,
+            COUNT(CASE WHEN o.status::text IN ('DELIVERED', 'delivered') THEN 1 END) AS delivered_orders,
+            COUNT(CASE WHEN o.status::text IN ('FAILED', 'failed') THEN 1 END) AS failed_orders,
             ROUND(
-                CAST(COUNT(CASE WHEN o.status = 'delivered' THEN 1 END) AS DECIMAL) / 
+                CAST(COUNT(CASE WHEN o.status::text IN ('DELIVERED', 'delivered') THEN 1 END) AS DECIMAL) / 
                 NULLIF(COUNT(o.id), 0) * 100, 2
             ) AS completion_rate_pct
         FROM drivers d
@@ -42,10 +42,10 @@ def upgrade() -> None:
         SELECT 
             tenant_id,
             COUNT(id) AS total_orders,
-            COUNT(CASE WHEN status = 'delivered' AND (actual_delivery <= sla_deadline OR sla_deadline IS NULL) THEN 1 END) AS on_time_deliveries,
-            COUNT(CASE WHEN sla_deadline IS NOT NULL AND (actual_delivery > sla_deadline OR (status NOT IN ('delivered', 'cancelled') AND NOW() > sla_deadline)) THEN 1 END) AS sla_breaches,
+            COUNT(CASE WHEN status::text IN ('DELIVERED', 'delivered') AND (actual_delivery <= sla_deadline OR sla_deadline IS NULL) THEN 1 END) AS on_time_deliveries,
+            COUNT(CASE WHEN sla_deadline IS NOT NULL AND (actual_delivery > sla_deadline OR (status::text NOT IN ('DELIVERED', 'delivered', 'CANCELLED', 'cancelled') AND NOW() > sla_deadline)) THEN 1 END) AS sla_breaches,
             ROUND(
-                CAST(COUNT(CASE WHEN status = 'delivered' AND (actual_delivery <= sla_deadline OR sla_deadline IS NULL) THEN 1 END) AS DECIMAL) / 
+                CAST(COUNT(CASE WHEN status::text IN ('DELIVERED', 'delivered') AND (actual_delivery <= sla_deadline OR sla_deadline IS NULL) THEN 1 END) AS DECIMAL) / 
                 NULLIF(COUNT(id), 0) * 100, 2
             ) AS on_time_delivery_rate_pct
         FROM orders
@@ -64,7 +64,7 @@ def upgrade() -> None:
             v.odometer_km,
             COUNT(o.id) AS completed_trips
         FROM vehicles v
-        LEFT JOIN orders o ON o.vehicle_id = v.id AND o.status = 'delivered'
+        LEFT JOIN orders o ON o.vehicle_id = v.id AND o.status::text IN ('DELIVERED', 'delivered')
         GROUP BY v.tenant_id, v.id, v.registration_number, v.vehicle_type, v.status, v.odometer_km;
     """)
 

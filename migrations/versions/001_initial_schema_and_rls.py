@@ -20,10 +20,11 @@ TENANT_TABLES = [
     'vehicles',
     'drivers',
     'orders',
-    'order_events',
-    'routes',
-    'route_stops',
     'gps_pings',
+    'shifts',
+    'geofences',
+    'geofence_events',
+    'maintenance_logs',
 ]
 
 
