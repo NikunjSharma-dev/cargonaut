@@ -41,7 +41,11 @@ const FLEET = [
     cargoType: 'parcel', pieces: 640, volumeM3: 26,
     stops: ['475 Broadus', '377 Hammond', '247 Coalwood', '687 Volborg', '874 Beebe'],
     activeStop: 3, currentLoc: [19.076, 72.8777],
-    routePath: [[19.02, 72.84], [19.076, 72.8777], [19.12, 72.9], [19.2, 72.97]],
+    routePath: [
+      [19.0200, 72.8400], [19.0340, 72.8450], [19.0510, 72.8520], [19.0650, 72.8640],
+      [19.0760, 72.8777], [19.0950, 72.8880], [19.1120, 72.8980], [19.1350, 72.9200],
+      [19.1650, 72.9450], [19.2000, 72.9700]
+    ],
   },
   {
     id: 'YR-34DFR734W2', partner: 'Roambee', variant: 'semi', mode: 'road',
@@ -51,7 +55,11 @@ const FLEET = [
     cargoType: 'palletized', pieces: 38, volumeM3: 61,
     stops: ['074 Rosebud', '159 Thurlow', '357 Hathaway', '854 Sheffield', '712 Miles City'],
     activeStop: 2, currentLoc: [28.6139, 77.209],
-    routePath: [[28.55, 77.15], [28.59, 77.18], [28.6139, 77.209], [28.66, 77.25]],
+    routePath: [
+      [28.5562, 77.1000], [28.5680, 77.1210], [28.5790, 77.1420], [28.5890, 77.1630],
+      [28.6010, 77.1850], [28.6139, 77.2090], [28.6250, 77.2180], [28.6380, 77.2280],
+      [28.6510, 77.2410], [28.6600, 77.2500]
+    ],
   },
   {
     id: 'CG412 · VT-CGN', partner: 'Cargonaut Air', variant: 'freighter', mode: 'air',
@@ -74,7 +82,10 @@ const FLEET = [
     cargoType: 'general', pieces: 96, volumeM3: 11,
     stops: ['874 Sheridan', '589 Ucross', '967 Clearmont', '474 Leiter', '377 Kendrick'],
     activeStop: 1, currentLoc: [12.9716, 77.5946],
-    routePath: [[12.93, 77.55], [12.9716, 77.5946], [13.02, 77.63]],
+    routePath: [
+      [12.9150, 77.5350], [12.9320, 77.5520], [12.9510, 77.5730], [12.9716, 77.5946],
+      [12.9920, 77.6110], [13.0200, 77.6300]
+    ],
   },
   {
     id: 'CG208 · VT-CGF', partner: 'Cargonaut Air', variant: 'turboprop', mode: 'air',
@@ -97,7 +108,9 @@ const FLEET = [
     cargoType: 'fragile', pieces: 24, volumeM3: 4.5,
     stops: ['125 Kinsey', '654 Saugus', '789 Fallon', '577 Glendive'],
     activeStop: 0, currentLoc: [18.5204, 73.8567],
-    routePath: [[18.5204, 73.8567], [18.56, 73.9]],
+    routePath: [
+      [18.4900, 73.8200], [18.5080, 73.8410], [18.5204, 73.8567], [18.5420, 73.8780], [18.5600, 73.9000]
+    ],
   },
   {
     id: 'BG-ER74R6984R', partner: 'Forwardo', variant: 'box', mode: 'road',
@@ -107,7 +120,10 @@ const FLEET = [
     cargoType: 'refrigerated', pieces: 210, volumeM3: 30,
     stops: ['369 Cohagen', '258 Hillside', '147 Rock Springs', '268 Angela'],
     activeStop: 3, currentLoc: [23.0225, 72.5714],
-    routePath: [[22.98, 72.52], [23.0225, 72.5714], [23.08, 72.63]],
+    routePath: [
+      [22.9500, 72.4900], [22.9800, 72.5200], [23.0050, 72.5480], [23.0225, 72.5714],
+      [23.0550, 72.6000], [23.0800, 72.6300]
+    ],
   },
   {
     id: 'CV-414ER58SER', partner: 'Lopez Pallets', variant: 'semi', mode: 'road',
@@ -117,7 +133,9 @@ const FLEET = [
     cargoType: 'liquid_bulk', pieces: 1, volumeM3: 24,
     stops: ['536 Dickinson', '469 Belfield', '641 Medora', '279 Wibaux'],
     activeStop: 0, currentLoc: [22.5726, 88.3639],
-    routePath: [[22.5726, 88.3639], [22.62, 88.41]],
+    routePath: [
+      [22.5400, 88.3400], [22.5580, 88.3520], [22.5726, 88.3639], [22.5950, 88.3850], [22.6200, 88.4100]
+    ],
   },
   {
     id: 'CG377 · VT-CGN', partner: 'Cargonaut Air', variant: 'freighter', mode: 'air',
@@ -140,7 +158,9 @@ const FLEET = [
     cargoType: 'general', pieces: 0, volumeM3: 0,
     stops: ['902 Ekalaka', '188 Alzada'],
     activeStop: 0, currentLoc: [17.385, 78.4867],
-    routePath: [[17.385, 78.4867], [17.42, 78.52]],
+    routePath: [
+      [17.3500, 78.4400], [17.3710, 78.4680], [17.3850, 78.4867], [17.4050, 78.5020], [17.4200, 78.5200]
+    ],
   },
   {
     id: 'PL-63DD1174QW', partner: 'Shiphike - For Packages', variant: 'van', mode: 'road',
@@ -150,7 +170,9 @@ const FLEET = [
     cargoType: 'general', pieces: 0, volumeM3: 0,
     stops: ['411 Broadus', '332 Otter'],
     activeStop: 0, currentLoc: [26.9124, 75.7873],
-    routePath: [[26.9124, 75.7873], [26.95, 75.83]],
+    routePath: [
+      [26.8700, 75.7400], [26.8920, 75.7650], [26.9124, 75.7873], [26.9350, 75.8100], [26.9500, 75.8300]
+    ],
   },
 ]
 

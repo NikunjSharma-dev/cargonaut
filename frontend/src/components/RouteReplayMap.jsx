@@ -171,36 +171,73 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
     }
   }, [styleTick, accent, isAir, resolved])
 
+  const [roadGeometry, setRoadGeometry] = useState(null)
+
+  // Fetch true driving route geometry from Mapbox Directions API for road transport
+  useEffect(() => {
+    if (isAir || !TOKEN || coords.length < 2) {
+      setRoadGeometry(null)
+      return
+    }
+
+    const waypointsToUse = coords.length > 25
+      ? coords.filter((_, idx) => idx % Math.ceil(coords.length / 25) === 0 || idx === coords.length - 1)
+      : coords
+
+    const waypoints = waypointsToUse.map(c => `${c[0]},${c[1]}`).join(';')
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${waypoints}?geometries=geojson&overview=full&access_token=${TOKEN}`
+
+    let isMounted = true
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        if (!isMounted) return
+        if (data.routes && data.routes[0]?.geometry?.coordinates) {
+          setRoadGeometry(data.routes[0].geometry.coordinates)
+        }
+      })
+      .catch(() => {
+        if (isMounted) setRoadGeometry(null)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [coords, isAir])
+
+  const activeCoords = (!isAir && roadGeometry && roadGeometry.length > 0) ? roadGeometry : coords
+
   // ── Push the trail in ──────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current
     if (!map || !map.getSource(SRC_TRAIL)) return
 
-    map.getSource(SRC_TRAIL).setData(lineFeature(coords))
-    map.getSource(SRC_ENDS).setData(endpointFeatures(coords))
+    map.getSource(SRC_TRAIL).setData(lineFeature(activeCoords))
+    map.getSource(SRC_ENDS).setData(endpointFeatures(activeCoords))
 
-    if (coords.length >= 2) {
-      const bounds = coords.reduce(
+    if (activeCoords.length >= 2) {
+      const bounds = activeCoords.reduce(
         (b, c) => b.extend(c),
-        new mapboxgl.LngLatBounds(coords[0], coords[0]),
+        new mapboxgl.LngLatBounds(activeCoords[0], activeCoords[0]),
       )
       map.fitBounds(bounds, { padding: 56, maxZoom: 14, duration: 600 })
-    } else if (coords.length === 1) {
-      map.easeTo({ center: coords[0], zoom: 13, duration: 600 })
+    } else if (activeCoords.length === 1) {
+      map.easeTo({ center: activeCoords[0], zoom: 13, duration: 600 })
     }
-  }, [coords, styleTick])
+  }, [activeCoords, styleTick])
 
   // ── Move the replay head ───────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current
     if (!map || !map.getSource(SRC_TRAVELLED)) return
 
-    const head = Math.min(cursor, coords.length - 1)
+    const ratio = coords.length > 1 ? cursor / (coords.length - 1) : 0
+    const head = Math.min(Math.round(ratio * (activeCoords.length - 1)), activeCoords.length - 1)
 
     // slice is exclusive, so +1 includes the point under the scrubber
-    map.getSource(SRC_TRAVELLED).setData(lineFeature(coords.slice(0, head + 1)))
+    map.getSource(SRC_TRAVELLED).setData(lineFeature(activeCoords.slice(0, head + 1)))
 
-    if (head < 0) {
+    if (head < 0 || activeCoords.length === 0) {
       markerRef.current?.remove()
       markerRef.current = null
       return
@@ -209,12 +246,12 @@ export default function RouteReplayMap({ points = [], cursor = 0, isAir = false,
       const el = markerElement()
       el.style.background = accent
       markerRef.current = new mapboxgl.Marker({ element: el })
-        .setLngLat(coords[head])
+        .setLngLat(activeCoords[head])
         .addTo(map)
     } else {
-      markerRef.current.setLngLat(coords[head])
+      markerRef.current.setLngLat(activeCoords[head])
     }
-  }, [coords, cursor, accent, styleTick])
+  }, [activeCoords, coords, cursor, accent, styleTick])
 
   if (!TOKEN) {
     return (
